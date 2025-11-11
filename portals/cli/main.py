@@ -1,7 +1,6 @@
 """Main CLI entry point for Portals."""
 
-import os
-from typing import Optional
+from __future__ import annotations
 
 import click
 
@@ -83,7 +82,7 @@ def status(ctx: click.Context) -> None:
 @cli.command()
 @click.argument("path", required=False)
 @click.pass_context
-def sync(ctx: click.Context, path: Optional[str]) -> None:
+def sync(ctx: click.Context, path: str | None) -> None:
     """Sync documents (bidirectional).
 
     If PATH is provided, sync only that file.

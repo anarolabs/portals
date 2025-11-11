@@ -27,4 +27,3 @@ repos:
       - id: mypy
         additional_dependencies:
           - types-aiofiles
-        args: [--strict, --ignore-missing-imports]

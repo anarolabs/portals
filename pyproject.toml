@@ -77,6 +77,16 @@ warn_no_return = true
 follow_imports = "normal"
 ignore_missing_imports = true
 
+# Allow untyped decorators in CLI (Click decorators don't have full type stubs)
+[[tool.mypy.overrides]]
+module = "portals.cli.*"
+disallow_untyped_decorators = false
+
+# Allow untyped decorators in tests (pytest fixtures)
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_decorators = false
+
 [tool.pytest.ini_options]
 minversion = "7.0"
 addopts = "-ra -q --strict-markers --cov=portals --cov-report=term-missing"

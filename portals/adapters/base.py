@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
 
 from portals.core.models import Document
 
@@ -110,7 +109,7 @@ class DocumentAdapter(ABC):
         pass
 
     @abstractmethod
-    async def create(self, uri: str, doc: Document, parent_id: Optional[str] = None) -> str:
+    async def create(self, uri: str, doc: Document, parent_id: str | None = None) -> str:
         """Create new document on platform.
 
         Args:

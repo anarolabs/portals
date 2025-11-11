@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 
 class SyncStatus(Enum):
@@ -66,7 +66,7 @@ class Document:
 
     content: str  # Markdown content
     metadata: DocumentMetadata
-    content_hash: Optional[str] = None  # SHA-256 hash of content
+    content_hash: str | None = None  # SHA-256 hash of content
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -86,7 +86,7 @@ class SyncPairState:
     last_synced_hash: str
     last_sync: datetime
     has_conflict: bool = False
-    last_error: Optional[str] = None
+    last_error: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -111,7 +111,7 @@ class SyncPair:
     created_at: datetime
     sync_direction: SyncDirection = SyncDirection.BIDIRECTIONAL
     conflict_resolution: ConflictResolution = ConflictResolution.MANUAL
-    state: Optional[SyncPairState] = None
+    state: SyncPairState | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -133,9 +133,9 @@ class SyncResult:
 
     status: SyncStatus
     message: str
-    local_path: Optional[str] = None
-    remote_uri: Optional[str] = None
-    error: Optional[Exception] = None
+    local_path: str | None = None
+    remote_uri: str | None = None
+    error: Exception | None = None
 
     def is_success(self) -> bool:
         """Check if sync was successful."""
