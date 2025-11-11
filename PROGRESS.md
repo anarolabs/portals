@@ -1,23 +1,25 @@
 # Portals - Development progress
 
 **Last updated**: 2025-11-11
-**Current phase**: Phase 3 (Mirror mode initialization) - ✅ COMPLETE
+**Current phase**: Phase 4 (Bidirectional sync) - ✅ COMPLETE
 **GitHub**: https://github.com/paparomes/portals
 
 ---
 
 ## Quick status for agents
 
-🟢 **Ready to start Phase 4**
+🟢 **Ready to start Phase 5**
 - ✅ Phase 0: Foundation complete
 - ✅ Phase 1: Local file operations complete
 - ✅ Phase 2: Notion adapter complete
 - ✅ Phase 3: Mirror mode initialization complete
-- ✅ InitService for orchestrating setup
-- ✅ HierarchyMapper for folder-to-page mapping
-- ✅ CLI init command fully functional
+- ✅ Phase 4: Bidirectional sync complete
+- ✅ ConflictDetector with 3-way merge
+- ✅ SyncEngine for push/pull operations
+- ✅ SyncService for orchestration
+- ✅ CLI sync and status commands functional
 
-**Next task**: Begin Phase 4 (Bidirectional sync)
+**Next task**: Begin Phase 5 (Conflict resolution)
 
 ---
 
@@ -29,7 +31,7 @@
 | 1 | Local file operations | ✅ Complete | 100% | f6f77df |
 | 2 | Notion adapter | ✅ Complete | 100% | 926e7fd |
 | 3 | Mirror mode initialization | ✅ Complete | 100% | 3468bd6 |
-| 4 | Bidirectional sync | ⚪ Not started | 0% | - |
+| 4 | Bidirectional sync | ✅ Complete | 100% | 7842fb7 |
 | 5 | Conflict resolution | ⚪ Not started | 0% | - |
 | 6 | Watch mode | ⚪ Not started | 0% | - |
 | 7 | Google Docs pairing | ⚪ Not started | 0% | - |
@@ -233,6 +235,45 @@
    - ✅ Dry-run mode flag
    - ✅ Clear user feedback with progress indicators
    - ✅ Full async/await integration
+
+**Time taken**: Completed in one session
+
+---
+
+## Phase 4: Bidirectional sync (✅ COMPLETE)
+
+### ✅ Completed tasks
+
+1. **ConflictDetector** (`portals/core/conflict_detector.py`) - commit: b2da9ef
+   - ✅ 3-way merge algorithm implementation
+   - ✅ Compares local, remote, and base hashes
+   - ✅ Determines sync direction automatically
+   - ✅ Detects conflicts when both sides changed
+   - ✅ Returns SyncDecision with reasoning
+
+2. **SyncEngine** (`portals/core/sync_engine.py`) - commit: 139d8ff
+   - ✅ Core bidirectional sync logic
+   - ✅ Automatic push/pull based on ConflictDetector
+   - ✅ Force push/pull to override conflicts
+   - ✅ Updates sync pair state after operations
+   - ✅ Comprehensive error handling
+
+3. **SyncService** (`portals/services/sync_service.py`) - commit: 1dd1924
+   - ✅ High-level sync orchestration
+   - ✅ Sync all pairs or individual files
+   - ✅ Loads and saves metadata
+   - ✅ Handles conflicts gracefully (no crash)
+   - ✅ Provides SyncSummary with statistics
+
+4. **Model enhancements** (`portals/core/models.py`) - commit: 1dd1924
+   - ✅ Added from_dict() methods to SyncPair and SyncPairState
+   - ✅ Enables deserialization from metadata store
+
+5. **CLI commands** (`portals/cli/main.py`) - commit: 7842fb7
+   - ✅ Complete sync command with force flags
+   - ✅ Status command showing conflicts and pair info
+   - ✅ Clear user feedback and error messages
+   - ✅ Summary statistics after operations
 
 **Time taken**: Completed in one session
 
@@ -460,9 +501,10 @@ Check these files:
 
 ---
 
-**Last commit**: 3468bd6 (Phase 3 complete)
+**Last commit**: 7842fb7 (Phase 4 complete)
 **Last updated**: 2025-11-11 by Claude Code (via paparomes)
 **Phase 0 status**: ✅ COMPLETE
 **Phase 1 status**: ✅ COMPLETE
 **Phase 2 status**: ✅ COMPLETE
-**Phase 3 status**: ✅ COMPLETE - Ready for Phase 4 (Bidirectional sync)
+**Phase 3 status**: ✅ COMPLETE
+**Phase 4 status**: ✅ COMPLETE - Ready for Phase 5 (Conflict resolution)
