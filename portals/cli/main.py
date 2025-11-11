@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 
 import click
 
 from portals import __version__
 from portals.services.init_service import InitService
+from portals.services.sync_service import SyncService
 from portals.utils.logging import configure_logging, get_logger
 
 logger = get_logger(__name__)
@@ -161,27 +163,173 @@ def init(
 
 
 @cli.command()
+@click.option(
+    "--path",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True),
+    default=".",
+    help="Directory to check status (defaults to current directory)",
+)
 @click.pass_context
-def status(ctx: click.Context) -> None:
+def status(ctx: click.Context, path: str) -> None:
     """Show sync status of all paired documents."""
-    logger.info("status_command", message="Status command (not yet implemented)")
-    click.echo("📊 Status display (coming in Phase 4)")
+    logger.info("status_command", path=path)
+
+    async def run_status() -> None:
+        base_path = Path(path).resolve()
+        notion_token = os.getenv("NOTION_API_TOKEN")
+
+        sync_service = SyncService(
+            base_path=base_path,
+            notion_token=notion_token,
+        )
+
+        try:
+            status_info = await sync_service.get_status()
+
+            if not status_info["initialized"]:
+                click.echo("❌ Not initialized. Run 'docsync init' first.")
+                return
+
+            mode = status_info.get("mode", "unknown")
+            pairs_count = status_info["pairs_count"]
+
+            click.echo(f"📊 Sync Status for {base_path}")
+            click.echo(f"   Mode: {mode}")
+            click.echo(f"   Pairs: {pairs_count}")
+
+            if pairs_count == 0:
+                click.echo("\n⚠️  No sync pairs found")
+                return
+
+            # Show pairs with conflicts
+            conflicts = [p for p in status_info["pairs"] if p["has_conflict"]]
+            if conflicts:
+                click.echo(f"\n⚠️  {len(conflicts)} pairs with conflicts:")
+                for pair in conflicts:
+                    click.echo(f"   - {pair['local_path']}")
+
+            # Show recent syncs
+            click.echo(f"\n✅ {pairs_count - len(conflicts)} pairs synced")
+
+        except Exception as e:
+            click.echo(f"❌ Error getting status: {e}")
+            logger.error("status_failed", error=str(e))
+            raise click.Abort() from e
+
+    asyncio.run(run_status())
 
 
 @cli.command()
 @click.argument("path", required=False)
+@click.option(
+    "--force-push",
+    is_flag=True,
+    help="Force push local changes to remote (ignore conflicts)",
+)
+@click.option(
+    "--force-pull",
+    is_flag=True,
+    help="Force pull remote changes to local (ignore conflicts)",
+)
+@click.option(
+    "--base-dir",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True),
+    default=".",
+    help="Base directory (defaults to current directory)",
+)
 @click.pass_context
-def sync(ctx: click.Context, path: str | None) -> None:
+def sync(
+    ctx: click.Context,
+    path: str | None,
+    force_push: bool,
+    force_pull: bool,
+    base_dir: str,
+) -> None:
     """Sync documents (bidirectional).
 
     If PATH is provided, sync only that file.
     Otherwise, sync all paired documents.
+
+    \b
+    Examples:
+      # Sync all documents
+      docsync sync
+
+      # Sync specific file
+      docsync sync docs/README.md
+
+      # Force push (override conflicts)
+      docsync sync --force-push
+
+      # Force pull (override conflicts)
+      docsync sync docs/README.md --force-pull
     """
-    logger.info("sync_command", path=path, message="Sync command (not yet implemented)")
-    if path:
-        click.echo(f"🔄 Syncing {path} (coming in Phase 4)")
-    else:
-        click.echo("🔄 Syncing all documents (coming in Phase 4)")
+    # Validate force flags
+    if force_push and force_pull:
+        click.echo("❌ Error: Cannot use both --force-push and --force-pull")
+        raise click.Abort()
+
+    force_direction = None
+    if force_push:
+        force_direction = "push"
+    elif force_pull:
+        force_direction = "pull"
+
+    logger.info("sync_command", path=path, force_direction=force_direction)
+
+    async def run_sync() -> None:
+        base_path = Path(base_dir).resolve()
+        notion_token = os.getenv("NOTION_API_TOKEN")
+
+        if not notion_token:
+            click.echo("❌ Error: Notion API token required")
+            click.echo("   Set NOTION_API_TOKEN environment variable")
+            raise click.Abort()
+
+        sync_service = SyncService(
+            base_path=base_path,
+            notion_token=notion_token,
+        )
+
+        try:
+            if path:
+                # Sync single file
+                click.echo(f"🔄 Syncing {path}...")
+                result = await sync_service.sync_file(path, force_direction)
+
+                if result.is_success():
+                    click.echo(f"✅ {result.message}")
+                elif result.is_conflict():
+                    click.echo(f"⚠️  {result.message}")
+                    click.echo("   Use --force-push or --force-pull to resolve")
+                else:
+                    click.echo(f"❌ {result.message}")
+
+            else:
+                # Sync all files
+                click.echo("🔄 Syncing all documents...")
+                summary = await sync_service.sync_all(force_direction)
+
+                click.echo("\n✅ Sync complete:")
+                click.echo(f"   Success: {summary.success}")
+                click.echo(f"   No changes: {summary.no_changes}")
+
+                if summary.conflicts > 0:
+                    click.echo(f"   ⚠️  Conflicts: {summary.conflicts}")
+                    click.echo("   Files with conflicts:")
+                    for pair in summary.conflict_pairs:
+                        click.echo(f"      - {pair.local_path}")
+                    click.echo("   Use --force-push or --force-pull to resolve")
+
+                if summary.errors > 0:
+                    click.echo(f"   ❌ Errors: {summary.errors}")
+
+        except Exception as e:
+            click.echo(f"\n❌ Sync failed: {e}")
+            logger.error("sync_failed", error=str(e))
+            raise click.Abort() from e
+
+    asyncio.run(run_sync())
 
 
 @cli.command()
