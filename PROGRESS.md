@@ -1,25 +1,25 @@
 # Portals - Development progress
 
 **Last updated**: 2025-11-11
-**Current phase**: Phase 4 (Bidirectional sync) - ✅ COMPLETE
+**Current phase**: Phase 5 (Conflict resolution) - ✅ COMPLETE
 **GitHub**: https://github.com/paparomes/portals
 
 ---
 
 ## Quick status for agents
 
-🟢 **Ready to start Phase 5**
+🟢 **Ready to start Phase 6**
 - ✅ Phase 0: Foundation complete
 - ✅ Phase 1: Local file operations complete
 - ✅ Phase 2: Notion adapter complete
 - ✅ Phase 3: Mirror mode initialization complete
 - ✅ Phase 4: Bidirectional sync complete
-- ✅ ConflictDetector with 3-way merge
-- ✅ SyncEngine for push/pull operations
-- ✅ SyncService for orchestration
-- ✅ CLI sync and status commands functional
+- ✅ Phase 5: Conflict resolution complete
+- ✅ DiffGenerator for showing changes
+- ✅ ConflictResolver with multiple strategies
+- ✅ Interactive CLI resolve command
 
-**Next task**: Begin Phase 5 (Conflict resolution)
+**Next task**: Begin Phase 6 (Watch mode)
 
 ---
 
@@ -32,7 +32,7 @@
 | 2 | Notion adapter | ✅ Complete | 100% | 926e7fd |
 | 3 | Mirror mode initialization | ✅ Complete | 100% | 3468bd6 |
 | 4 | Bidirectional sync | ✅ Complete | 100% | 7842fb7 |
-| 5 | Conflict resolution | ⚪ Not started | 0% | - |
+| 5 | Conflict resolution | ✅ Complete | 100% | 802b866 |
 | 6 | Watch mode | ⚪ Not started | 0% | - |
 | 7 | Google Docs pairing | ⚪ Not started | 0% | - |
 | 8 | Obsidian import | ⚪ Not started | 0% | - |
@@ -279,6 +279,37 @@
 
 ---
 
+## Phase 5: Conflict resolution (✅ COMPLETE)
+
+### ✅ Completed tasks
+
+1. **DiffGenerator** (`portals/core/diff_generator.py`) - commit: 964e186
+   - ✅ Unified diff format (like git diff)
+   - ✅ Side-by-side comparison with line details
+   - ✅ Conflict markers for manual editing
+   - ✅ Change summary statistics
+   - ✅ Diff detection utility
+
+2. **ConflictResolver** (`portals/core/conflict_resolver.py`) - commit: cd15c81
+   - ✅ Multiple resolution strategies
+   - ✅ Use local version (force push)
+   - ✅ Use remote version (force pull)
+   - ✅ Manual merge with editor
+   - ✅ Respects EDITOR environment variable
+   - ✅ Conflict info and diff previews
+
+3. **CLI resolve command** (`portals/cli/main.py`) - commit: 802b866
+   - ✅ Interactive resolution interface
+   - ✅ Shows diff preview of changes
+   - ✅ Displays change summary
+   - ✅ Interactive menu (L/R/M/D/C)
+   - ✅ Updates metadata after resolution
+   - ✅ Clear user feedback
+
+**Time taken**: Completed in one session
+
+---
+
 ## Key decisions made
 
 ### Naming
@@ -501,10 +532,11 @@ Check these files:
 
 ---
 
-**Last commit**: 7842fb7 (Phase 4 complete)
+**Last commit**: 802b866 (Phase 5 complete)
 **Last updated**: 2025-11-11 by Claude Code (via paparomes)
 **Phase 0 status**: ✅ COMPLETE
 **Phase 1 status**: ✅ COMPLETE
 **Phase 2 status**: ✅ COMPLETE
 **Phase 3 status**: ✅ COMPLETE
-**Phase 4 status**: ✅ COMPLETE - Ready for Phase 5 (Conflict resolution)
+**Phase 4 status**: ✅ COMPLETE
+**Phase 5 status**: ✅ COMPLETE - Ready for Phase 6 (Watch mode)
