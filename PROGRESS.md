@@ -1,22 +1,23 @@
 # Portals - Development progress
 
 **Last updated**: 2025-11-11
-**Current phase**: Phase 1 (Local file operations) - ✅ COMPLETE
+**Current phase**: Phase 2 (Notion adapter) - ✅ COMPLETE
 **GitHub**: https://github.com/paparomes/portals
 
 ---
 
 ## Quick status for agents
 
-🟢 **Ready to start Phase 2**
+🟢 **Ready to start Phase 3**
 - ✅ Phase 0: Foundation complete
 - ✅ Phase 1: Local file operations complete
-- ✅ LocalFileAdapter with YAML front matter and SHA-256 hashing
-- ✅ MetadataStore for .docsync/ management
-- ✅ DirectoryScanner for file discovery
-- ✅ 56 unit tests passing with 77% coverage
+- ✅ Phase 2: Notion adapter complete
+- ✅ NotionBlockConverter for markdown<->blocks conversion
+- ✅ NotionAdapter with full CRUD operations
+- ✅ NotionHierarchyManager for path-to-page mappings
+- ✅ 99 unit tests passing with excellent coverage
 
-**Next task**: Begin Phase 2 (Notion adapter) - NotionAdapter implementation
+**Next task**: Begin Phase 3 (Mirror mode initialization)
 
 ---
 
@@ -26,7 +27,7 @@
 |-------|-------------|--------|----------|--------|
 | 0 | Foundation and setup | ✅ Complete | 100% | d80d90f |
 | 1 | Local file operations | ✅ Complete | 100% | f6f77df |
-| 2 | Notion adapter | ⚪ Not started | 0% | - |
+| 2 | Notion adapter | ✅ Complete | 100% | 926e7fd |
 | 3 | Mirror mode initialization | ⚪ Not started | 0% | - |
 | 4 | Bidirectional sync | ⚪ Not started | 0% | - |
 | 5 | Conflict resolution | ⚪ Not started | 0% | - |
@@ -165,34 +166,46 @@
 
 ---
 
-## Phase 2: Notion adapter (Not started)
+## Phase 2: Notion adapter (✅ COMPLETE)
 
-### Tasks for Phase 2
+### ✅ Completed tasks
 
-1. **NotionAdapter** (`portals/adapters/notion/adapter.py`)
-   - Initialize Notion client
-   - Read page content → markdown
-   - Write markdown → Notion blocks
-   - Create pages with parent relationships
-   - List child pages
+1. **NotionBlockConverter** (`portals/adapters/notion/converter.py`) - commits: 8bc6a37, c1e909c
+   - ✅ Markdown → Notion blocks conversion
+   - ✅ Notion blocks → Markdown conversion
+   - ✅ Support for: paragraphs, headings (h1-h3), bulleted/numbered lists, code blocks, quotes
+   - ✅ Round-trip conversion preservation
+   - ✅ 22 unit tests - 98% coverage
 
-2. **NotionBlockConverter** (`portals/adapters/notion/converter.py`)
-   - Markdown → Notion blocks
-   - Notion blocks → Markdown
-   - Support: paragraphs, headings, lists, code, quotes, images
+2. **NotionAdapter** (`portals/adapters/notion/adapter.py`) - commits: e9baa7a, fad00d8
+   - ✅ Full DocumentAdapter interface implementation
+   - ✅ Read Notion pages and convert to markdown
+   - ✅ Write markdown to Notion pages
+   - ✅ Create pages with parent relationships
+   - ✅ Delete (archive) pages
+   - ✅ Get metadata without full content fetch
+   - ✅ Batch block operations (100 block API limit handling)
+   - ✅ URI parsing with validation
+   - ✅ Metadata extraction (title, timestamps, tags)
+   - ✅ 17 unit tests - 94% coverage
 
-3. **NotionHierarchyManager** (`portals/adapters/notion/hierarchy.py`)
-   - Create parent-child page relationships
-   - Map folder structure to page hierarchy
-   - Maintain hierarchy metadata
+3. **NotionHierarchyManager** (`portals/adapters/notion/hierarchy.py`) - commits: 93e1a3b, 926e7fd
+   - ✅ Bidirectional path-to-page-ID mapping
+   - ✅ Parent-child relationship tracking
+   - ✅ Intelligent parent resolution based on directory structure
+   - ✅ Depth calculation and hierarchy queries
+   - ✅ Serialization/deserialization for persistence
+   - ✅ 26 unit tests - comprehensive coverage
 
-4. **Tests**
-   - Mock Notion API responses
-   - Test read/write operations
-   - Test block conversion
-   - Test hierarchy management
+4. **Tests** - commits: c1e909c, fad00d8, 926e7fd
+   - ✅ `tests/unit/test_notion_converter.py` (22 tests)
+   - ✅ `tests/unit/test_notion_adapter.py` (17 tests)
+   - ✅ `tests/unit/test_notion_hierarchy.py` (26 tests)
+   - ✅ 65 Phase 2 tests passing
+   - ✅ 99 total tests passing (Phase 0-2)
+   - ✅ Excellent coverage across all Phase 2 components
 
-**Estimated time**: 5-7 days
+**Time taken**: Completed in one session
 
 ---
 
@@ -418,7 +431,8 @@ Check these files:
 
 ---
 
-**Last commit**: f6f77df (Phase 1 complete)
+**Last commit**: 926e7fd (Phase 2 complete)
 **Last updated**: 2025-11-11 by Claude Code (via paparomes)
 **Phase 0 status**: ✅ COMPLETE
-**Phase 1 status**: ✅ COMPLETE - Ready for Phase 2 (Notion adapter)
+**Phase 1 status**: ✅ COMPLETE
+**Phase 2 status**: ✅ COMPLETE - Ready for Phase 3 (Mirror mode initialization)
