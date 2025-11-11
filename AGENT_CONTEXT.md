@@ -51,6 +51,7 @@ docsync/
 ├── .env.example                  # Environment variables template
 ├── README.md                     # Project overview
 ├── AGENT_CONTEXT.md              # This file - project navigation
+├── PROGRESS.md                   # Development progress tracker (for agents)
 ├── 01-context/                   # Strategic documents
 │   ├── 2025-11-11_IMPLEMENTATION_PLAN.md  # Complete implementation plan
 │   ├── 2025-11-11_GIT_GUIDE.md           # Git best practices
@@ -66,6 +67,16 @@ docsync/
 
 ## Key documents
 
+### Agent continuity
+
+**`PROGRESS.md`** (start here for continuing work!)
+- Current phase status and completion percentage
+- Completed tasks with commit references
+- Remaining tasks for current phase
+- Quick status for agents picking up work
+- Next session checklist
+- **Read this first when continuing development!**
+
 ### Planning and architecture
 
 **`01-context/2025-11-11_IMPLEMENTATION_PLAN.md`** (primary document)
@@ -74,7 +85,7 @@ docsync/
 - Technical specifications
 - Testing strategy
 - Timeline estimates
-- **Read this first!**
+- **Read this for initial understanding!**
 
 **`01-context/2025-11-11_NOTION_STRUCTURE.md`**
 - Notion team space structure (Portals)
@@ -185,7 +196,15 @@ docsync/
 
 ## How to use this project
 
-### For development
+### For agents continuing development
+
+1. **Start with `PROGRESS.md`** - See current phase, completed tasks, and what's next
+2. Review "Remaining Phase X tasks" section in PROGRESS.md
+3. Check recent commits to understand latest changes
+4. Continue from the next pending task
+5. Update PROGRESS.md as you complete tasks
+
+### For initial project understanding
 
 1. Read `01-context/2025-11-11_IMPLEMENTATION_PLAN.md` thoroughly
 2. Understand the three operating modes
@@ -369,4 +388,6 @@ Ideas for later versions:
 
 ---
 
-**Quick start**: Read `01-context/2025-11-11_IMPLEMENTATION_PLAN.md` → Understand three modes → Begin Phase 0
+**Quick start for new agents**: Read `PROGRESS.md` (current status) → Read `01-context/2025-11-11_IMPLEMENTATION_PLAN.md` (full plan) → Continue from next task
+
+**Quick start for initial setup**: Read `01-context/2025-11-11_IMPLEMENTATION_PLAN.md` → Understand three modes → Begin Phase 0
