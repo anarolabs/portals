@@ -1,23 +1,23 @@
 # Portals - Development progress
 
 **Last updated**: 2025-11-11
-**Current phase**: Phase 2 (Notion adapter) - ✅ COMPLETE
+**Current phase**: Phase 3 (Mirror mode initialization) - ✅ COMPLETE
 **GitHub**: https://github.com/paparomes/portals
 
 ---
 
 ## Quick status for agents
 
-🟢 **Ready to start Phase 3**
+🟢 **Ready to start Phase 4**
 - ✅ Phase 0: Foundation complete
 - ✅ Phase 1: Local file operations complete
 - ✅ Phase 2: Notion adapter complete
-- ✅ NotionBlockConverter for markdown<->blocks conversion
-- ✅ NotionAdapter with full CRUD operations
-- ✅ NotionHierarchyManager for path-to-page mappings
-- ✅ 99 unit tests passing with excellent coverage
+- ✅ Phase 3: Mirror mode initialization complete
+- ✅ InitService for orchestrating setup
+- ✅ HierarchyMapper for folder-to-page mapping
+- ✅ CLI init command fully functional
 
-**Next task**: Begin Phase 3 (Mirror mode initialization)
+**Next task**: Begin Phase 4 (Bidirectional sync)
 
 ---
 
@@ -28,7 +28,7 @@
 | 0 | Foundation and setup | ✅ Complete | 100% | d80d90f |
 | 1 | Local file operations | ✅ Complete | 100% | f6f77df |
 | 2 | Notion adapter | ✅ Complete | 100% | 926e7fd |
-| 3 | Mirror mode initialization | ⚪ Not started | 0% | - |
+| 3 | Mirror mode initialization | ✅ Complete | 100% | 3468bd6 |
 | 4 | Bidirectional sync | ⚪ Not started | 0% | - |
 | 5 | Conflict resolution | ⚪ Not started | 0% | - |
 | 6 | Watch mode | ⚪ Not started | 0% | - |
@@ -204,6 +204,35 @@
    - ✅ 65 Phase 2 tests passing
    - ✅ 99 total tests passing (Phase 0-2)
    - ✅ Excellent coverage across all Phase 2 components
+
+**Time taken**: Completed in one session
+
+---
+
+## Phase 3: Mirror mode initialization (✅ COMPLETE)
+
+### ✅ Completed tasks
+
+1. **InitService** (`portals/services/init_service.py`) - commits: fa6fcfd, 6269ff3
+   - ✅ Complete mirror mode initialization workflow
+   - ✅ Scans local directory for markdown files
+   - ✅ Creates Notion pages for folders and files
+   - ✅ Saves metadata and sync pairs to .docsync/
+   - ✅ Dry-run mode for testing
+   - ✅ Comprehensive error handling
+
+2. **HierarchyMapper** (`portals/core/hierarchy_mapper.py`) - commit: 9607cb1
+   - ✅ Builds directory tree from file list
+   - ✅ Maps folder structure to Notion pages
+   - ✅ Creates parent-child relationships
+   - ✅ Recursive hierarchy creation
+
+3. **CLI init command** (`portals/cli/main.py`) - commit: 3468bd6
+   - ✅ Accepts Notion token and root page ID
+   - ✅ Environment variable support (NOTION_API_TOKEN)
+   - ✅ Dry-run mode flag
+   - ✅ Clear user feedback with progress indicators
+   - ✅ Full async/await integration
 
 **Time taken**: Completed in one session
 
@@ -431,8 +460,9 @@ Check these files:
 
 ---
 
-**Last commit**: 926e7fd (Phase 2 complete)
+**Last commit**: 3468bd6 (Phase 3 complete)
 **Last updated**: 2025-11-11 by Claude Code (via paparomes)
 **Phase 0 status**: ✅ COMPLETE
 **Phase 1 status**: ✅ COMPLETE
-**Phase 2 status**: ✅ COMPLETE - Ready for Phase 3 (Mirror mode initialization)
+**Phase 2 status**: ✅ COMPLETE
+**Phase 3 status**: ✅ COMPLETE - Ready for Phase 4 (Bidirectional sync)
