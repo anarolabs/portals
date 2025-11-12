@@ -71,6 +71,7 @@ class WatchService:
         # State
         self.is_running = False
         self.always_sync = False  # Set to True if user chooses "Always"
+        self.event_loop: asyncio.AbstractEventLoop | None = None
 
         logger.info(
             "watch_service_initialized",
@@ -87,6 +88,11 @@ class WatchService:
 
         metadata = await self.metadata_store.load()
         pairs_data = metadata.get("pairs", [])
+
+        # Handle both list and dict formats
+        if isinstance(pairs_data, dict):
+            pairs_data = list(pairs_data.values())
+
         self.sync_pairs = [SyncPair.from_dict(p) for p in pairs_data]
 
         logger.info("sync_pairs_loaded", count=len(self.sync_pairs))
@@ -97,8 +103,17 @@ class WatchService:
         Args:
             change_event: File change event
         """
-        # Schedule async processing
-        asyncio.create_task(self._process_local_change(change_event))
+        # Schedule async processing in the main event loop
+        if self.event_loop and self.event_loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                self._process_local_change(change_event),
+                self.event_loop
+            )
+        else:
+            logger.warning(
+                "event_loop_not_running",
+                message="Cannot process change - event loop not running"
+            )
 
     async def _process_local_change(
         self,
@@ -137,7 +152,7 @@ class WatchService:
                 return
 
             # Perform sync
-            result = await self.sync_engine.sync(pair)
+            result = await self.sync_engine.sync_pair(pair)
 
             if result.is_success():
                 logger.info(
@@ -193,7 +208,7 @@ class WatchService:
                 return
 
             # Perform sync
-            result = await self.sync_engine.sync(remote_change.pair)
+            result = await self.sync_engine.sync_pair(remote_change.pair)
 
             if result.is_success():
                 logger.info(
@@ -296,6 +311,9 @@ class WatchService:
         if self.is_running:
             logger.warning("watch_service_already_running")
             return
+
+        # Store event loop for thread-safe async execution
+        self.event_loop = asyncio.get_running_loop()
 
         # Load sync pairs
         await self.load_sync_pairs()
