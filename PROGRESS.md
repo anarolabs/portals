@@ -528,15 +528,49 @@ Check these files:
 - **Architecture questions**: `01-context/2025-11-11_IMPLEMENTATION_PLAN.md`
 - **Notion structure**: `01-context/2025-11-11_NOTION_STRUCTURE.md`
 - **Git help**: `01-context/2025-11-11_GIT_GUIDE.md`
+- **Remote vs local development**: `01-context/2025-11-12_REMOTE_VS_LOCAL_DEVELOPMENT.md` ⭐ NEW
 - **Code navigation**: `AGENT_CONTEXT.md`
 
 ---
 
-**Last commit**: 802b866 (Phase 5 complete)
-**Last updated**: 2025-11-11 by Claude Code (via paparomes)
+## Recent updates (2025-11-12)
+
+### Merged Claude Code Web work to main
+Successfully merged 45 commits from Claude Code Web branch containing:
+- 28 new files created
+- 6,047 lines added
+- Phases 1-5 complete implementations
+- Comprehensive test suite (1,976 lines)
+
+All code verified working locally and pushed to GitHub.
+
+### Created remote vs local development assessment
+New document: `01-context/2025-11-12_REMOTE_VS_LOCAL_DEVELOPMENT.md`
+
+**Key findings**:
+- **75% of remaining work** can be done in Claude Code Web
+- Phase 6 (Watch mode): 70% Web, 30% Desktop
+- Phase 7 (Google Docs): 85% Web, 15% Desktop
+- Phase 8 (Obsidian): 90% Web, 10% Desktop
+
+**Strategy**: Maximize remote development by:
+1. Writing all logic/algorithms in Web
+2. Creating unit tests with mocks in Web
+3. Implementing CLI commands in Web
+4. Reserving Desktop only for integration tests and real API testing
+
+This allows flexible remote work while ensuring quality through proper local testing.
+
+---
+
+**Last commit**: Merged 45 commits from Claude Code Web (Phases 1-5)
+**Last updated**: 2025-11-12 by Claude Code Desktop (via paparomes)
 **Phase 0 status**: ✅ COMPLETE
 **Phase 1 status**: ✅ COMPLETE
 **Phase 2 status**: ✅ COMPLETE
 **Phase 3 status**: ✅ COMPLETE
 **Phase 4 status**: ✅ COMPLETE
-**Phase 5 status**: ✅ COMPLETE - Ready for Phase 6 (Watch mode)
+**Phase 5 status**: ✅ COMPLETE
+**Phase 6 status**: 🔜 READY TO START (70% can be done in Web)
+**Phase 7 status**: ⏳ PENDING (85% can be done in Web)
+**Phase 8 status**: ⏳ PENDING (90% can be done in Web)

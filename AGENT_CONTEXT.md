@@ -102,6 +102,13 @@ docsync/
 - Daily workflow guide
 - **Essential for version control**
 
+**`01-context/2025-11-12_REMOTE_VS_LOCAL_DEVELOPMENT.md`**
+- Assessment of which tasks can be done in Claude Code Web
+- Breakdown of Phases 6-8 by development environment
+- ~75% of remaining work can be done remotely
+- Integration testing requirements for Desktop
+- **Read before starting Phases 6-8**
+
 ---
 
 ## Operating modes
