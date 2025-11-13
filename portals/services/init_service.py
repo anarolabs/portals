@@ -71,7 +71,7 @@ class InitService:
         self.root_page_id = root_page_id
 
         # Initialize adapters and services
-        self.local_adapter = LocalFileAdapter()
+        self.local_adapter = LocalFileAdapter(base_path=str(self.base_path))
         self.notion_adapter = NotionAdapter(api_token=notion_token)
         self.directory_scanner = DirectoryScanner(base_path=self.base_path)
         self.hierarchy_manager = NotionHierarchyManager(root_page_id=root_page_id)

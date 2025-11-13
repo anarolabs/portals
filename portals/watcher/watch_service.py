@@ -56,7 +56,7 @@ class WatchService:
 
         # Initialize components
         self.metadata_store = MetadataStore(base_path=base_path)
-        self.local_adapter = LocalFileAdapter()
+        self.local_adapter = LocalFileAdapter(base_path=str(base_path))
         self.notion_adapter = NotionAdapter(api_token=notion_token)
         self.sync_engine = SyncEngine(
             local_adapter=self.local_adapter,

@@ -86,7 +86,7 @@ class SyncService:
         self.metadata_store = MetadataStore(base_path=self.base_path)
 
         # Initialize adapters
-        self.local_adapter = LocalFileAdapter()
+        self.local_adapter = LocalFileAdapter(base_path=str(self.base_path))
 
         # Initialize remote adapter based on config
         self.notion_token = notion_token
@@ -121,6 +121,10 @@ class SyncService:
 
         metadata = await self.metadata_store.load()
         pairs = metadata.get("pairs", [])
+
+        # Handle both list and dict formats
+        if isinstance(pairs, dict):
+            pairs = list(pairs.values())
 
         if not pairs:
             logger.info("No sync pairs found")
@@ -178,6 +182,10 @@ class SyncService:
 
         metadata = await self.metadata_store.load()
         pairs = metadata.get("pairs", [])
+
+        # Handle both list and dict formats
+        if isinstance(pairs, dict):
+            pairs = list(pairs.values())
 
         # Find pair for this file
         pair_data = next(

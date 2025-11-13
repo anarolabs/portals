@@ -395,7 +395,7 @@ def resolve(ctx: click.Context, path: str, base_dir: str) -> None:
         pair = SyncPair.from_dict(pair_data)
 
         # Initialize adapters and resolver
-        local_adapter = LocalFileAdapter()
+        local_adapter = LocalFileAdapter(base_path=str(base_path))
         notion_adapter = NotionAdapter(api_token=notion_token)
         sync_engine = SyncEngine(
             local_adapter=local_adapter,
