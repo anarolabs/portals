@@ -120,9 +120,9 @@ class TestFileWatcherIntegration:
             watcher.stop()
 
     def test_ignores_docsync_directory(self, test_dir, callback, change_queue):
-        """Test that .docsync directory is ignored."""
-        # Create .docsync directory
-        docsync_dir = test_dir / ".docsync"
+        """Test that .portals directory is ignored."""
+        # Create .portals directory
+        docsync_dir = test_dir / ".portals"
         docsync_dir.mkdir()
 
         watcher = FileWatcher(
@@ -135,7 +135,7 @@ class TestFileWatcherIntegration:
             watcher.start()
             time.sleep(0.5)
 
-            # Create file in .docsync
+            # Create file in .portals
             (docsync_dir / "metadata.json").write_text('{"test": true}')
 
             # Wait

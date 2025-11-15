@@ -291,7 +291,7 @@ Questions to resolve during implementation:
 2. **Folder representation**: How to represent empty folders in Notion?
 3. **Attachment handling**: Upload to Notion or keep local references?
 4. **Metadata location**: Store Notion page ID in YAML front matter?
-5. **Git integration**: Should `.docsync/` be committed?
+5. **Git integration**: Should `.portals/` be committed?
 
 ---
 

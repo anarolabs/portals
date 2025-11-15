@@ -235,9 +235,9 @@ The MCP Google Workspace tools are already authenticated at:
 1. Add Google Docs to SyncPair
 2. Implement multi-remote support (Notion + Google Docs)
 3. Add CLI commands:
-   - `docsync pair --gdocs <doc-id> <local-file>`
-   - `docsync push <file>` (both Notion + Google Docs)
-   - `docsync pull <file>`
+   - `portals pair --gdocs <doc-id> <local-file>`
+   - `portals push <file>` (both Notion + Google Docs)
+   - `portals pull <file>`
 4. Add watch mode support (poll Google Docs for changes)
 5. Pull comments/suggestions from Google Docs
 

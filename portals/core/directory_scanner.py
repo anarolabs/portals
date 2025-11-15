@@ -24,7 +24,7 @@ class DirectoryScanner:
     """
 
     DEFAULT_IGNORE_DIRS = {
-        ".docsync",
+        ".portals",
         ".git",
         ".hg",
         ".svn",

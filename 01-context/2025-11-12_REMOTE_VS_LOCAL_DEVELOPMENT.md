@@ -32,7 +32,7 @@
 **Why remote**: All logic, no actual file watching needed
 **Tasks**:
 - Write `FileWatcher` class structure
-- Implement event filtering logic (only .md files, ignore .docsync/)
+- Implement event filtering logic (only .md files, ignore .portals/)
 - Write debouncing logic (2 second delay)
 - Create event queue management
 - Write all unit tests with mocked watchdog events
@@ -230,9 +230,9 @@ class GoogleDocsAdapter(DocumentAdapter):
 **What**: Click commands for pair, unpair, list
 **Why remote**: Just CLI interface
 **Tasks**:
-- `docsync pair <file> <gdoc-uri>`
-- `docsync unpair <file>`
-- `docsync list` (show pairs)
+- `portals pair <file> <gdoc-uri>`
+- `portals unpair <file>`
+- `portals list` (show pairs)
 - Help text and validation
 
 #### 6. All unit tests
@@ -344,8 +344,8 @@ def test_wikilink_with_display():
 **What**: Click command for import
 **Why remote**: Just CLI interface
 **Tasks**:
-- `docsync import <obsidian-uri> --output=<path>`
-- `docsync import <obsidian-uri> --to=<notion-uri>`
+- `portals import <obsidian-uri> --output=<path>`
+- `portals import <obsidian-uri> --to=<notion-uri>`
 - Validation and help text
 
 #### 5. All unit tests

@@ -65,8 +65,8 @@ class TestFileWatcherHandler:
         assert handler._should_process(event) is False
 
     def test_should_ignore_docsync_directory(self, handler, base_path):
-        """Test that .docsync directory is ignored."""
-        event = FileModifiedEvent(str(base_path / ".docsync" / "metadata.json"))
+        """Test that .portals directory is ignored."""
+        event = FileModifiedEvent(str(base_path / ".portals" / "metadata.json"))
         assert handler._should_process(event) is False
 
     def test_should_ignore_git_directory(self, handler, base_path):

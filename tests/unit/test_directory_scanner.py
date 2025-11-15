@@ -32,7 +32,7 @@ def sample_dir(tmp_path: Path) -> Path:
     gitdir.mkdir()
     (gitdir / "config").write_text("git config")
 
-    docsyncdir = tmp_path / ".docsync"
+    docsyncdir = tmp_path / ".portals"
     docsyncdir.mkdir()
     (docsyncdir / "metadata.json").write_text("{}")
 
@@ -72,13 +72,13 @@ class TestDirectoryScanner:
         assert not any(".git" in str(p) for p in paths)
 
     def test_scan_ignores_docsync_directory(self, sample_dir: Path) -> None:
-        """Test that .docsync directory is ignored."""
+        """Test that .portals directory is ignored."""
         scanner = DirectoryScanner(sample_dir, markdown_only=False)
         files = scanner.scan()
 
-        # .docsync files should not be included
+        # .portals files should not be included
         paths = {f.relative_path for f in files}
-        assert not any(".docsync" in str(p) for p in paths)
+        assert not any(".portals" in str(p) for p in paths)
 
     def test_scan_ignores_ds_store(self, sample_dir: Path) -> None:
         """Test that .DS_Store files are ignored."""

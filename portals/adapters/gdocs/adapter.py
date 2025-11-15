@@ -64,10 +64,10 @@ class GoogleDocsAdapter(DocumentAdapter):
 
         self.account = account_email
         self.credentials_path = credentials_path or os.path.expanduser(
-            "~/.config/docsync/google_credentials.json"
+            "~/.config/portals/google_credentials.json"
         )
         self.token_path = token_path or os.path.expanduser(
-            f"~/.config/docsync/{token_filename}"
+            f"~/.config/portals/{token_filename}"
         )
 
         self.converter = GoogleDocsConverter()

@@ -34,7 +34,7 @@ Also added dict/list metadata compatibility in `sync_service.py`.
 
 ### Verification
 ✅ Watch mode test: File changes detected and read successfully
-✅ Sync test: `docsync sync --force-push` worked perfectly
+✅ Sync test: `portals sync --force-push` worked perfectly
 ✅ All 42 tests still passing
 ✅ End-to-end pipeline verified
 
@@ -102,7 +102,7 @@ Phase 6 now 100% complete.
 ## Test Environment
 
 **Active test directory**: `/tmp/docsync-test`
-- Contains: `test.md` and `.docsync/metadata.json`
+- Contains: `test.md` and `.portals/metadata.json`
 - Paired with Notion test page
 - Can be kept for future testing or cleaned up
 

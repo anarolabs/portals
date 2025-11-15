@@ -14,26 +14,26 @@ from portals.core.models import ConflictResolution, SyncDirection, SyncPair, Syn
 
 
 class MetadataStore:
-    """Manages sync metadata stored in .docsync/ directory.
+    """Manages sync metadata stored in .portals/ directory.
 
     Stores information about file pairs, sync status, and configuration.
     """
 
-    METADATA_DIR = ".docsync"
+    METADATA_DIR = ".portals"
     METADATA_FILE = "metadata.json"
 
     def __init__(self, base_path: str | Path) -> None:
         """Initialize metadata store.
 
         Args:
-            base_path: Base directory containing .docsync/
+            base_path: Base directory containing .portals/
         """
         self.base_path = Path(base_path)
         self.metadata_dir = self.base_path / self.METADATA_DIR
         self.metadata_file = self.metadata_dir / self.METADATA_FILE
 
     async def initialize(self) -> None:
-        """Initialize .docsync/ directory and metadata file.
+        """Initialize .portals/ directory and metadata file.
 
         Creates the directory if it doesn't exist.
         Creates empty metadata file if it doesn't exist.
@@ -42,7 +42,7 @@ class MetadataStore:
             MetadataError: If initialization fails
         """
         try:
-            # Create .docsync directory
+            # Create .portals directory
             self.metadata_dir.mkdir(parents=True, exist_ok=True)
 
             # Create empty metadata file if it doesn't exist
@@ -213,7 +213,7 @@ class MetadataStore:
         """Check if metadata store exists.
 
         Returns:
-            True if .docsync/ directory exists
+            True if .portals/ directory exists
         """
         return self.metadata_dir.exists()
 

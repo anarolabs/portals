@@ -112,7 +112,7 @@ $RECYCLE.BIN/
 # Portals-Specific
 # ============================================
 # Sync metadata (local state, don't commit!)
-.docsync/
+.portals/
 
 # Environment variables (contains secrets!)
 .env
@@ -182,5 +182,5 @@ dmypy.json
 # IMPORTANT NOTES
 # ============================================
 # .env - Contains your API keys (NEVER commit this!)
-# .docsync/ - Contains local sync state (personal, don't commit)
+# .portals/ - Contains local sync state (personal, don't commit)
 # __pycache__/ - Python cache (regenerated, don't commit)

@@ -178,14 +178,14 @@ docsync import obsidian://vault/research.md --to=notion://page-id
                     ↓
 ┌─────────────────────────────────────────────┐
 │  Storage                                    │
-│  - MetadataStore (.docsync/metadata.json)   │
-│  - ConfigStore (.docsync/config.json)       │
+│  - MetadataStore (.portals/metadata.json)   │
+│  - ConfigStore (.portals/config.json)       │
 └─────────────────────────────────────────────┘
 ```
 
 ### Operating modes
 
-**Mode stored in `.docsync/config.json`:**
+**Mode stored in `.portals/config.json`:**
 
 ```json
 {
@@ -224,7 +224,7 @@ project-a/                 →   📄 Project A (parent page)
 
 ### Metadata storage
 
-**.docsync/metadata.json** (for mirror mode):
+**.portals/metadata.json** (for mirror mode):
 
 ```json
 {
@@ -259,7 +259,7 @@ project-a/                 →   📄 Project A (parent page)
 }
 ```
 
-**.docsync/metadata.json** (for pair mode):
+**.portals/metadata.json** (for pair mode):
 
 ```json
 {
@@ -341,7 +341,7 @@ docsync/
    - Handle file system errors
 
 2. **MetadataStore**
-   - Initialize `.docsync/` directory
+   - Initialize `.portals/` directory
    - Read/write metadata.json
    - Atomic writes (temp file + rename)
    - Schema validation
@@ -349,7 +349,7 @@ docsync/
 3. **DirectoryScanner**
    - Recursively scan directory for markdown files
    - Build file tree
-   - Filter files (ignore .docsync/, .git/, etc.)
+   - Filter files (ignore .portals/, .git/, etc.)
 
 **Key files**:
 ```
@@ -816,7 +816,7 @@ test_diff_generator_side_by_side()
 1. **FileWatcher**
    - Watch directory with watchdog
    - Debounce changes (2 second delay)
-   - Filter relevant files (only .md, ignore .docsync/)
+   - Filter relevant files (only .md, ignore .portals/)
    - Queue changes for processing
 
 2. **WatchService**
@@ -1204,7 +1204,7 @@ logger.error("sync_failed", file="notes.md", error="ConflictError")
 
 ### Configuration
 
-**.docsync/config.json**:
+**.portals/config.json**:
 ```json
 {
   "mode": "notion-mirror",
@@ -1220,7 +1220,7 @@ logger.error("sync_failed", file="notes.md", error="ConflictError")
   },
   "logging": {
     "level": "INFO",
-    "file": ".docsync/docsync.log"
+    "file": ".portals/docsync.log"
   }
 }
 ```
@@ -1342,7 +1342,7 @@ Before starting:
    ---
    ```
 
-5. **Git integration**: Should `.docsync/` be committed to git?
+5. **Git integration**: Should `.portals/` be committed to git?
    - Yes: Share sync state with team
    - No: Keep it local
 

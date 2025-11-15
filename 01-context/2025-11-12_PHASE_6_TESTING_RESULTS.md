@@ -31,7 +31,7 @@ Successfully implemented and tested the core watch mode functionality with real 
 - test_file_watcher_integration.py: 8 tests with real file system
 - Tests real watchdog file monitoring
 - Validates debouncing behavior
-- Tests filtering (.md only, ignores .docsync/, .git/)
+- Tests filtering (.md only, ignores .portals/, .git/)
 - Tests nested directories
 - Tests rapid file changes
 
@@ -110,7 +110,7 @@ Successfully implemented and tested the core watch mode functionality with real 
 - Detects file modifications
 - Detects file deletions
 - Properly filters non-.md files
-- Ignores .docsync/, .git/ directories
+- Ignores .portals/, .git/ directories
 - Works with nested directories
 
 ✅ **Debouncing**
@@ -132,7 +132,7 @@ Successfully implemented and tested the core watch mode functionality with real 
 - Graceful shutdown
 
 ✅ **CLI Command**
-- `docsync watch` works
+- `portals watch` works
 - `--auto` flag for automatic syncing
 - `--dry-run` flag for preview
 - `--poll-interval` to configure Notion polling

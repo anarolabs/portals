@@ -170,16 +170,16 @@ Sync decision: conflict - Both local and remote changed differently
 - Graceful shutdown
 
 ✅ **Sync Commands**:
-- `docsync sync` - Works with correct paths
-- `docsync sync --force-push` - Verified working
-- `docsync sync --force-pull` - Should work (same code path)
+- `portals sync` - Works with correct paths
+- `portals sync --force-push` - Verified working
+- `portals sync --force-pull` - Should work (same code path)
 
 ✅ **All CLI Commands**:
-- `docsync init` - Path resolution fixed
-- `docsync sync` - Path resolution fixed
-- `docsync watch` - Path resolution fixed
-- `docsync resolve` - Path resolution fixed
-- `docsync status` - Inherited fix from sync_service
+- `portals init` - Path resolution fixed
+- `portals sync` - Path resolution fixed
+- `portals watch` - Path resolution fixed
+- `portals resolve` - Path resolution fixed
+- `portals status` - Inherited fix from sync_service
 
 ### Test Coverage
 

@@ -246,7 +246,7 @@ docsync init notion-mirror --teamspace-id=<id>
 
 ### Configuration
 
-**Store in `.docsync/config.json`**:
+**Store in `.portals/config.json`**:
 ```json
 {
   "mode": "notion-mirror",
@@ -393,6 +393,6 @@ Notion supports deep nesting. Should we limit it?
 ✅ **Folders**: Become parent pages
 ✅ **Files**: Become child pages
 ✅ **Hierarchy**: Fully preserved
-✅ **Git**: Don't commit `.docsync/` (local state)
+✅ **Git**: Don't commit `.portals/` (local state)
 
 **Next**: Implement in Phase 2 and Phase 3!

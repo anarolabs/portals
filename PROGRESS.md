@@ -123,7 +123,7 @@
     - ✅ pytest runs successfully (no tests yet, infrastructure ready)
     - ✅ mypy type checking passes (14 source files)
     - ✅ ruff code quality checks pass
-    - ✅ CLI works: `python -m portals --help` and `docsync --help`
+    - ✅ CLI works: `python -m portals --help` and `portals --help`
     - ✅ Version command works correctly
     - Updated ruff config to new lint section format
 
@@ -143,7 +143,7 @@
    - ✅ 16 unit tests - 83% coverage
 
 2. **MetadataStore** (`portals/core/metadata_store.py`) - commit: 6909f60
-   - ✅ Initialize and manage `.docsync/` directory
+   - ✅ Initialize and manage `.portals/` directory
    - ✅ Read/write `metadata.json` with atomic operations
    - ✅ Store sync pairs with full state tracking
    - ✅ Configuration management (get/set config)
@@ -153,7 +153,7 @@
 
 3. **DirectoryScanner** (`portals/core/directory_scanner.py`) - commit: f20e9ca
    - ✅ Recursively scan directories for markdown files
-   - ✅ Filter out ignored directories (.git, .docsync, node_modules, etc.)
+   - ✅ Filter out ignored directories (.git, .portals, node_modules, etc.)
    - ✅ Filter out ignored files (.DS_Store, etc.)
    - ✅ Support custom ignore lists
    - ✅ Return FileInfo objects with path and metadata
@@ -223,7 +223,7 @@
    - ✅ Complete mirror mode initialization workflow
    - ✅ Scans local directory for markdown files
    - ✅ Creates Notion pages for folders and files
-   - ✅ Saves metadata and sync pairs to .docsync/
+   - ✅ Saves metadata and sync pairs to .portals/
    - ✅ Dry-run mode for testing
    - ✅ Comprehensive error handling
 
@@ -383,7 +383,7 @@
 - **Operating modes**: Mirror mode (primary), Pair mode, Import mode
 - **Notion structure**: Nested pages (not databases)
 - **Folder mapping**: Folders → parent pages, subfolders/files → child pages
-- **Git strategy**: Don't commit `.docsync/` (local state)
+- **Git strategy**: Don't commit `.portals/` (local state)
 - **Sync philosophy**: Semi-automatic with prompts, manual conflict resolution
 
 ### Technology stack

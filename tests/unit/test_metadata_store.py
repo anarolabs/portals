@@ -44,7 +44,7 @@ class TestMetadataStore:
     """Tests for MetadataStore."""
 
     async def test_initialize(self, store: MetadataStore, tmp_path: Path) -> None:
-        """Test initialization creates .docsync/ directory and metadata file."""
+        """Test initialization creates .portals/ directory and metadata file."""
         await store.initialize()
 
         # Verify directory exists
@@ -323,9 +323,9 @@ class TestMetadataStore:
             await store.load()
 
     async def test_metadata_dir_path(self, tmp_path: Path) -> None:
-        """Test that .docsync is created in correct location."""
+        """Test that .portals is created in correct location."""
         store = MetadataStore(tmp_path)
         await store.initialize()
 
-        assert store.metadata_dir == tmp_path / ".docsync"
-        assert store.metadata_file == tmp_path / ".docsync" / "metadata.json"
+        assert store.metadata_dir == tmp_path / ".portals"
+        assert store.metadata_file == tmp_path / ".portals" / "metadata.json"
