@@ -21,7 +21,7 @@ from portals.core.models import Document, DocumentMetadata
 
 SCOPES = [
     'https://www.googleapis.com/auth/documents',
-    'https://www.googleapis.com/auth/drive.readonly'
+    'https://www.googleapis.com/auth/drive.file'  # Access to files created/opened by app
 ]
 
 
@@ -190,13 +190,13 @@ class GoogleDocsAdapter(DocumentAdapter):
             # Build requests
             requests = []
 
-            # 1. Delete existing content
-            if doc_length > 0:
+            # 1. Delete existing content (cannot include final newline at doc_length)
+            if doc_length > 1:
                 requests.append({
                     'deleteContentRange': {
                         'range': {
                             'startIndex': 1,
-                            'endIndex': doc_length + 1
+                            'endIndex': doc_length
                         }
                     }
                 })
