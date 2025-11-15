@@ -1,14 +1,14 @@
 # Portals - Development progress
 
-**Last updated**: 2025-11-12 (Session 5)
-**Current phase**: Phase 6 (Watch mode) - ✅ COMPLETE
+**Last updated**: 2025-11-15 (Session 6)
+**Current phase**: Phase 7 (Google Docs pairing) - ✅ COMPLETE
 **GitHub**: https://github.com/paparomes/portals
 
 ---
 
 ## Quick status for agents
 
-🎉 **Phase 6 Complete! Ready to start Phase 7**
+🎉 **Phase 7 Complete! Ready to start Phase 8 (or test Notion fully)**
 - ✅ Phase 0: Foundation complete
 - ✅ Phase 1: Local file operations complete
 - ✅ Phase 2: Notion adapter complete
@@ -16,14 +16,14 @@
 - ✅ Phase 4: Bidirectional sync complete
 - ✅ Phase 5: Conflict resolution complete
 - ✅ Phase 6: Watch mode complete
-  - ✅ FileWatcher with real-time monitoring
-  - ✅ NotionPoller for remote changes
-  - ✅ Thread-safe async execution
-  - ✅ Path resolution working
-  - ✅ 42/42 tests passing
-  - ✅ Production ready
+- ✅ Phase 7: Google Docs pairing complete
+  - ✅ GoogleDocsConverter with full markdown formatting
+  - ✅ GoogleDocsAdapter with multi-account OAuth2
+  - ✅ PairingManager for file ↔ doc relationships
+  - ✅ CLI commands: pair, push, pull, unpair, list-gdocs
+  - ✅ Multi-account support (personal, consultancy, estatemate)
 
-**Next task**: Begin Phase 7 (Google Docs integration)
+**Next task**: Test Phase 7 workflow, then either Phase 8 (Obsidian) or test Notion integration
 
 ---
 
@@ -37,8 +37,8 @@
 | 3 | Mirror mode initialization | ✅ Complete | 100% | 3468bd6 |
 | 4 | Bidirectional sync | ✅ Complete | 100% | 7842fb7 |
 | 5 | Conflict resolution | ✅ Complete | 100% | 802b866 |
-| 6 | Watch mode | ✅ Complete | 100% | Pending |
-| 7 | Google Docs pairing | ⚪ Not started | 0% | - |
+| 6 | Watch mode | ✅ Complete | 100% | 7480ef9 |
+| 7 | Google Docs pairing | ✅ Complete | 100% | Pending |
 | 8 | Obsidian import | ⚪ Not started | 0% | - |
 
 ---
@@ -314,11 +314,68 @@
 
 ---
 
+## Phase 7: Google Docs pairing (✅ COMPLETE)
+
+### ✅ Completed tasks
+
+1. **GoogleDocsConverter** (`portals/adapters/gdocs/converter.py`) - commits: 515b62e, d72a3e2
+   - ✅ Markdown → Google Docs conversion using markdown-it-py
+   - ✅ Google Docs → Markdown conversion
+   - ✅ Full formatting support:
+     - Headings (H1-H6) with native Google Docs styles
+     - Bold, italic, bold+italic text
+     - Inline code (monospace, smaller font)
+     - Links
+     - Nested lists (bullets and numbered) with proper API usage
+     - Code blocks (monospace font, gray background, indentation)
+     - Blockquotes (indentation, left border, background)
+     - Horizontal rules
+   - ✅ Tab offset calculation for proper list nesting
+   - ✅ Checkbox stripping from Notion-imported content
+
+2. **GoogleDocsAdapter** (`portals/adapters/gdocs/adapter.py`)
+   - ✅ Full DocumentAdapter interface implementation
+   - ✅ Direct Google Docs API access (not MCP)
+   - ✅ OAuth2 authentication with token persistence
+   - ✅ Multi-account support: personal, consultancy, estatemate
+   - ✅ Separate token files per account in `~/.config/docsync/`
+   - ✅ Create, read, update, delete operations
+   - ✅ Metadata extraction (title, timestamps)
+
+3. **PairingManager** (`portals/core/pairing.py`)
+   - ✅ Track file ↔ Google Doc relationships
+   - ✅ Storage in `.portals/pairings.json`
+   - ✅ Add, remove, list, update pairing operations
+   - ✅ Sync state tracking (hashes, timestamps)
+   - ✅ Multi-platform support (gdocs, notion)
+
+4. **CLI commands** (`portals/cli/gdocs_commands.py`)
+   - ✅ `portals pair <file> --account=<account> --create` - Create pairing
+   - ✅ `portals list-gdocs` - List all Google Docs pairings
+   - ✅ `portals unpair <file>` - Remove pairing
+   - ✅ `portals push <file>` - Push local changes to Google Doc
+   - ✅ `portals pull <file>` - Pull Google Doc changes to local
+   - ✅ All commands registered in main CLI
+
+5. **Multi-account authentication**
+   - ✅ Account aliases: 'personal', 'consultancy', 'estatemate'
+   - ✅ Token files: `google_token_<email>.json`
+   - ✅ Shared credentials: `google_credentials.json`
+   - ✅ All three accounts tested and authenticated
+
+6. **Project naming update**
+   - ✅ Renamed CLI command from `docsync` to `portals` (pyproject.toml)
+   - ✅ Updated AGENT_CONTEXT.md with correct naming
+
+**Time taken**: Completed over multiple sessions
+
+---
+
 ## Key decisions made
 
 ### Naming
 - **Official name**: Portals
-- **CLI command**: `docsync`
+- **CLI command**: `portals`
 - **Notion team space**: Portals
 - **Python package**: `portals`
 

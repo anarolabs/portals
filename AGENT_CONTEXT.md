@@ -3,7 +3,7 @@
 ## Project overview
 
 **Official name**: Portals
-**CLI command**: `docsync`
+**CLI command**: `portals`
 
 Multi-platform document synchronization tool that keeps local markdown files in sync with Notion, Google Docs, and Obsidian.
 
@@ -230,15 +230,15 @@ docsync/
 ```bash
 # Initialize mirror mode for Notion sync
 cd ~/Documents/Claude\ Code/
-docsync init notion-mirror --database=<database-id>
-docsync watch
+portals init notion-mirror --database=<database-id>
+portals watch
 
 # Create selective Google Docs pair
-docsync pair report.md gdoc://abc123
-docsync sync report.md
+portals pair report.md gdoc://abc123
+portals sync report.md
 
 # Import from Obsidian
-docsync import obsidian://vault/note.md --to=notion://page-id
+portals import obsidian://vault/note.md --to=notion://page-id
 ```
 
 ---

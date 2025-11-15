@@ -48,19 +48,22 @@ def cli(ctx: click.Context, log_level: str, log_format: str) -> None:
     \b
     Examples:
       # Initialize mirror mode for Notion sync
-      docsync init notion-mirror --teamspace=portals
+      portals init notion-mirror --teamspace=portals
+
+      # Pair a file with Google Docs
+      portals pair memo.md --account=personal
 
       # Start watching for changes
-      docsync watch
+      portals watch
 
       # Check sync status
-      docsync status
+      portals status
 
       # Sync a specific file
-      docsync sync path/to/file.md
+      portals sync path/to/file.md
 
     For more help on a specific command, run:
-      docsync COMMAND --help
+      portals COMMAND --help
     """
     # Store config in context
     ctx.ensure_object(dict)
@@ -637,8 +640,18 @@ def version(ctx: click.Context) -> None:
     """Show version information."""
     click.echo(f"Portals version {__version__}")
     click.echo("Multi-platform document synchronization tool")
-    click.echo("CLI command: docsync")
+    click.echo("CLI command: portals")
     click.echo("\nProject: https://github.com/paparomes/portals")
+
+
+# Register Google Docs commands
+from portals.cli.gdocs_commands import pair, list_pairings, unpair, push, pull
+
+cli.add_command(pair)
+cli.add_command(push)
+cli.add_command(pull)
+cli.add_command(unpair)
+cli.add_command(list_pairings, name="list-gdocs")
 
 
 if __name__ == "__main__":

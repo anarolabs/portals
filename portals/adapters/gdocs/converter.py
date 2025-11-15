@@ -322,51 +322,73 @@ class GoogleDocsConverter:
         Returns:
             New index after processing
         """
-        list_start = self.current_index
-
         i = index + 1
         while i < len(tokens) and tokens[i].type not in ["bullet_list_close", "ordered_list_close"]:
             if tokens[i].type == "list_item_open":
+                # Set start index BEFORE adding tabs so tabs are included in the paragraph range
                 item_start = self.current_index
+
+                # Add leading tabs for nesting (Google Docs uses tabs to determine nesting level)
+                tabs = "\t" * nesting_level
+                result.plain_text += tabs
+                self.current_index += len(tabs)
 
                 # Process list item content
                 i += 1
+                has_content = False
                 while i < len(tokens) and tokens[i].type != "list_item_close":
                     if tokens[i].type == "paragraph_open":
-                        # Get paragraph content but don't add extra newline
+                        # Get paragraph content
                         i += 1
                         while i < len(tokens) and tokens[i].type != "paragraph_close":
                             if tokens[i].type == "inline":
                                 text_content = self._process_inline(tokens[i], result)
                                 # Strip checkbox markers like [ ] or [x]
                                 text_content = re.sub(r'^\s*\[\s*[x ]?\s*\]\s*', '', text_content)
-                                result.plain_text += text_content
-                                self.current_index += len(text_content)
+                                if text_content.strip():  # Only add if there's actual content
+                                    result.plain_text += text_content
+                                    self.current_index += len(text_content)
+                                    has_content = True
                             i += 1
-                    elif tokens[i].type == "bullet_list_open":
-                        # Nested bullet list
-                        i = self._process_list(tokens, i, result, ordered=False, nesting_level=nesting_level + 1)
+                        i += 1  # Skip paragraph_close
                         continue
-                    elif tokens[i].type == "ordered_list_open":
-                        # Nested numbered list
-                        i = self._process_list(tokens, i, result, ordered=True, nesting_level=nesting_level + 1)
+                    elif tokens[i].type in ["bullet_list_open", "ordered_list_open"]:
+                        # Add newline before nested list if we had content
+                        if has_content:
+                            result.plain_text += "\n"
+                            self.current_index += 1
+
+                            # Save parent item
+                            result.list_ranges.append({
+                                "start_index": item_start,
+                                "end_index": self.current_index,
+                                "ordered": ordered,
+                                "nesting_level": nesting_level,
+                            })
+                            has_content = False
+
+                        # Process nested list
+                        is_ordered = tokens[i].type == "ordered_list_open"
+                        i = self._process_list(tokens, i, result, ordered=is_ordered, nesting_level=nesting_level + 1)
                         continue
                     i += 1
 
-                # Add newline after list item
-                result.plain_text += "\n"
-                self.current_index += 1
+                # Add newline after list item content
+                if has_content:
+                    result.plain_text += "\n"
+                    self.current_index += 1
 
-                item_end = self.current_index
+                    item_end = self.current_index
 
-                # Track list item range with nesting level
-                result.list_ranges.append({
-                    "start_index": item_start,
-                    "end_index": item_end,
-                    "ordered": ordered,
-                    "nesting_level": nesting_level,
-                })
-            i += 1
+                    # Track list item range with nesting level
+                    result.list_ranges.append({
+                        "start_index": item_start,
+                        "end_index": item_end,
+                        "ordered": ordered,
+                        "nesting_level": nesting_level,
+                    })
+            else:
+                i += 1
 
         return i + 1
 
@@ -386,9 +408,7 @@ class GoogleDocsConverter:
         Returns:
             New index after processing
         """
-        # For now, just process as normal text with "> " prefix
-        result.plain_text += "> "
-        self.current_index += 2
+        start_index = self.current_index
 
         i = index + 1
         while i < len(tokens) and tokens[i].type != "blockquote_close":
@@ -396,6 +416,17 @@ class GoogleDocsConverter:
                 i = self._process_paragraph(tokens, i, result)
             else:
                 i += 1
+
+        end_index = self.current_index
+
+        # Track blockquote range for formatting
+        result.format_ranges.append(
+            FormatRange(
+                start_index=start_index,
+                end_index=end_index,
+                format_type="blockquote",
+            )
+        )
 
         return i
 
@@ -466,14 +497,84 @@ class GoogleDocsConverter:
         """
         requests = []
 
-        # Apply heading styles
+        # IMPORTANT: Apply list formatting FIRST before other formatting
+        # because createParagraphBullets removes tabs, which shifts indices
+        # Group consecutive list items by type (ordered vs unordered) and apply
+        # createParagraphBullets to entire list ranges at once so Google Docs
+        # can detect nesting levels from tabs correctly
+        if conversion.list_ranges:
+            list_groups = []
+            current_group = {
+                "ordered": conversion.list_ranges[0]["ordered"],
+                "start_index": conversion.list_ranges[0]["start_index"],
+                "end_index": conversion.list_ranges[0]["end_index"],
+            }
+
+            for i in range(1, len(conversion.list_ranges)):
+                curr = conversion.list_ranges[i]
+                prev = conversion.list_ranges[i-1]
+
+                # If same type and adjacent/overlapping, extend the current group
+                # Adjacent means the current item starts at or before the previous item's end
+                is_adjacent = curr["start_index"] <= current_group["end_index"]
+                same_type = curr["ordered"] == current_group["ordered"]
+
+                if same_type and is_adjacent:
+                    current_group["end_index"] = max(current_group["end_index"], curr["end_index"])
+                else:
+                    # Different type or non-adjacent, start new group
+                    list_groups.append(current_group)
+                    current_group = {
+                        "ordered": curr["ordered"],
+                        "start_index": curr["start_index"],
+                        "end_index": curr["end_index"],
+                    }
+
+            # Add final group
+            list_groups.append(current_group)
+
+            # Apply createParagraphBullets to each group
+            # IMPORTANT: Track tab removal offset because each createParagraphBullets
+            # removes leading tabs, shifting all subsequent indices
+            tab_offset = 0
+
+            for group in list_groups:
+                bullet_preset = "NUMBERED_DECIMAL_ALPHA_ROMAN" if group["ordered"] else "BULLET_DISC_CIRCLE_SQUARE"
+
+                # Count tabs in this group's text
+                group_text = conversion.plain_text[group["start_index"]:group["end_index"]]
+                tabs_in_group = group_text.count('\t')
+
+                # Adjust indices based on tabs removed by previous groups
+                adjusted_start = group["start_index"] - tab_offset
+                adjusted_end = group["end_index"] - 1 - tab_offset  # -1 for trailing newline
+
+                requests.append({
+                    "createParagraphBullets": {
+                        "range": {
+                            "startIndex": adjusted_start,
+                            "endIndex": adjusted_end,
+                        },
+                        "bulletPreset": bullet_preset,
+                    }
+                })
+
+                # Update offset for next group
+                tab_offset += tabs_in_group
+
+        # Apply heading styles and text formatting
+        # Adjust indices to account for tabs removed by list formatting
+        # Only subtract tabs that appear BEFORE each formatting range
         for fmt in conversion.format_ranges:
+            # Count tabs before this format range
+            tabs_before = conversion.plain_text[:fmt.start_index].count('\t')
+
             if fmt.format_type == "heading":
                 requests.append({
                     "updateParagraphStyle": {
                         "range": {
-                            "startIndex": fmt.start_index,
-                            "endIndex": fmt.end_index,
+                            "startIndex": fmt.start_index - tabs_before,
+                            "endIndex": fmt.end_index - tabs_before,
                         },
                         "paragraphStyle": {
                             "namedStyleType": f"HEADING_{fmt.level}"
@@ -486,8 +587,8 @@ class GoogleDocsConverter:
                 requests.append({
                     "updateTextStyle": {
                         "range": {
-                            "startIndex": fmt.start_index,
-                            "endIndex": fmt.end_index,
+                            "startIndex": fmt.start_index - tabs_before,
+                            "endIndex": fmt.end_index - tabs_before,
                         },
                         "textStyle": {"bold": True},
                         "fields": "bold",
@@ -498,8 +599,8 @@ class GoogleDocsConverter:
                 requests.append({
                     "updateTextStyle": {
                         "range": {
-                            "startIndex": fmt.start_index,
-                            "endIndex": fmt.end_index,
+                            "startIndex": fmt.start_index - tabs_before,
+                            "endIndex": fmt.end_index - tabs_before,
                         },
                         "textStyle": {"italic": True},
                         "fields": "italic",
@@ -512,8 +613,8 @@ class GoogleDocsConverter:
                 requests.append({
                     "updateTextStyle": {
                         "range": {
-                            "startIndex": fmt.start_index,
-                            "endIndex": fmt.end_index,
+                            "startIndex": fmt.start_index - tabs_before,
+                            "endIndex": fmt.end_index - tabs_before,
                         },
                         "textStyle": {
                             "fontSize": {"magnitude": 10, "unit": "PT"},
@@ -526,8 +627,8 @@ class GoogleDocsConverter:
                 requests.append({
                     "updateTextStyle": {
                         "range": {
-                            "startIndex": fmt.start_index,
-                            "endIndex": fmt.end_index,
+                            "startIndex": fmt.start_index - tabs_before,
+                            "endIndex": fmt.end_index - tabs_before,
                         },
                         "textStyle": {
                             "link": {"url": fmt.url}
@@ -536,44 +637,98 @@ class GoogleDocsConverter:
                     }
                 })
 
-        # Apply list formatting
-        for list_range in conversion.list_ranges:
-            bullet_preset = "NUMBERED_DECIMAL_ALPHA_ROMAN" if list_range["ordered"] else "BULLET_DISC_CIRCLE_SQUARE"
-            nesting_level = list_range.get("nesting_level", 0)
-
-            bullet_request = {
-                "createParagraphBullets": {
-                    "range": {
-                        "startIndex": list_range["start_index"],
-                        "endIndex": list_range["end_index"] - 1,  # Exclude trailing newline
-                    },
-                    "bulletPreset": bullet_preset,
-                }
-            }
-
-            # Add nesting level if > 0
-            if nesting_level > 0:
-                # Use updateParagraphStyle to set indentation for nested lists
+            elif fmt.format_type == "code_block":
+                # Code blocks: monospace font + gray background
+                # Text style: monospace font and background color
                 requests.append({
-                    "updateParagraphStyle": {
+                    "updateTextStyle": {
                         "range": {
-                            "startIndex": list_range["start_index"],
-                            "endIndex": list_range["end_index"] - 1,
+                            "startIndex": fmt.start_index - tabs_before,
+                            "endIndex": fmt.end_index - tabs_before,
                         },
-                        "paragraphStyle": {
-                            "indentStart": {
-                                "magnitude": 36 * nesting_level,  # 36 points per level
-                                "unit": "PT"
+                        "textStyle": {
+                            "weightedFontFamily": {
+                                "fontFamily": "Courier New"
                             },
-                            "indentFirstLine": {
-                                "magnitude": 18,
-                                "unit": "PT"
+                            "fontSize": {"magnitude": 10, "unit": "PT"},
+                            "backgroundColor": {
+                                "color": {
+                                    "rgbColor": {
+                                        "red": 0.95,
+                                        "green": 0.95,
+                                        "blue": 0.95
+                                    }
+                                }
                             }
                         },
-                        "fields": "indentStart,indentFirstLine"
+                        "fields": "weightedFontFamily,fontSize,backgroundColor",
                     }
                 })
 
-            requests.append(bullet_request)
+                # Paragraph style: slight indentation
+                requests.append({
+                    "updateParagraphStyle": {
+                        "range": {
+                            "startIndex": fmt.start_index - tabs_before,
+                            "endIndex": fmt.end_index - tabs_before,
+                        },
+                        "paragraphStyle": {
+                            "indentStart": {"magnitude": 36, "unit": "PT"},
+                            "indentEnd": {"magnitude": 36, "unit": "PT"},
+                        },
+                        "fields": "indentStart,indentEnd",
+                    }
+                })
+
+            elif fmt.format_type == "blockquote":
+                # Blockquotes: left indentation + left border + light gray background
+                requests.append({
+                    "updateParagraphStyle": {
+                        "range": {
+                            "startIndex": fmt.start_index - tabs_before,
+                            "endIndex": fmt.end_index - tabs_before,
+                        },
+                        "paragraphStyle": {
+                            "indentStart": {"magnitude": 36, "unit": "PT"},
+                            "borderLeft": {
+                                "color": {
+                                    "color": {
+                                        "rgbColor": {
+                                            "red": 0.6,
+                                            "green": 0.6,
+                                            "blue": 0.6
+                                        }
+                                    }
+                                },
+                                "width": {"magnitude": 3.0, "unit": "PT"},
+                                "padding": {"magnitude": 10.0, "unit": "PT"},
+                                "dashStyle": "SOLID",
+                            },
+                        },
+                        "fields": "indentStart,borderLeft",
+                    }
+                })
+
+                # Add subtle background color
+                requests.append({
+                    "updateTextStyle": {
+                        "range": {
+                            "startIndex": fmt.start_index - tabs_before,
+                            "endIndex": fmt.end_index - tabs_before,
+                        },
+                        "textStyle": {
+                            "backgroundColor": {
+                                "color": {
+                                    "rgbColor": {
+                                        "red": 0.98,
+                                        "green": 0.98,
+                                        "blue": 0.98
+                                    }
+                                }
+                            }
+                        },
+                        "fields": "backgroundColor",
+                    }
+                })
 
         return requests

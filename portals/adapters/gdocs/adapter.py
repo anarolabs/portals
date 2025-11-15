@@ -35,19 +35,39 @@ class GoogleDocsAdapter(DocumentAdapter):
     def __init__(
         self,
         credentials_path: str | None = None,
-        token_path: str | None = None
+        token_path: str | None = None,
+        account: str | None = None
     ):
         """Initialize Google Docs adapter.
 
         Args:
             credentials_path: Path to OAuth2 credentials file
             token_path: Path to store OAuth2 token
+            account: Account identifier (email or alias: 'personal', 'consultancy', 'estatemate')
         """
+        # Account aliases for convenience
+        account_emails = {
+            'personal': 'rsiepelmeyer@gmail.com',
+            'consultancy': 'roman@anarolabs.com',
+            'estatemate': 'roman@estatemate.io',
+        }
+
+        # Resolve account alias to email
+        if account:
+            account_email = account_emails.get(account, account)
+            # Use account-specific token file
+            token_filename = f"google_token_{account_email.replace('@', '_at_').replace('.', '_')}.json"
+        else:
+            # Default account (personal)
+            account_email = 'rsiepelmeyer@gmail.com'
+            token_filename = "google_token.json"
+
+        self.account = account_email
         self.credentials_path = credentials_path or os.path.expanduser(
             "~/.config/docsync/google_credentials.json"
         )
         self.token_path = token_path or os.path.expanduser(
-            "~/.config/docsync/google_token.json"
+            f"~/.config/docsync/{token_filename}"
         )
 
         self.converter = GoogleDocsConverter()

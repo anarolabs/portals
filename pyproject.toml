@@ -37,7 +37,7 @@ dev = [
 ]
 
 [project.scripts]
-docsync = "portals.cli.main:cli"
+portals = "portals.cli.main:cli"
 
 [build-system]
 requires = ["hatchling"]
