@@ -2,7 +2,7 @@
 
 **Last updated**: 2025-11-15 (Session 6)
 **Current phase**: Phase 7 (Google Docs pairing) - ✅ COMPLETE
-**GitHub**: https://github.com/paparomes/portals
+**GitHub**: https://github.com/anarolabs/portals
 
 ---
 
@@ -51,7 +51,7 @@
    - Created `.gitignore` with proper exclusions
    - Created `.env.example` template
    - Initialized Git and made first commit
-   - Pushed to GitHub: https://github.com/paparomes/portals
+   - Pushed to GitHub: https://github.com/anarolabs/portals
 
 2. **Project planning and documentation** (commit: 23068f1)
    - `01-context/2025-11-11_IMPLEMENTATION_PLAN.md` - Complete 8-phase plan
@@ -485,7 +485,7 @@ python -m portals --help
 
 ```bash
 # Clone the repository
-git clone https://github.com/paparomes/portals.git
+git clone https://github.com/anarolabs/portals.git
 cd portals
 
 # Set up Python environment
@@ -699,7 +699,7 @@ Completed components:
 ---
 
 **Last commit**: *Pending* - Path resolution fix (Session 5)
-**Last updated**: 2025-11-12 (Session 5) by Claude Code Desktop (via paparomes)
+**Last updated**: 2025-11-12 (Session 5) by Claude Code Desktop (via anarolabs)
 **Phase 0 status**: ✅ COMPLETE
 **Phase 1 status**: ✅ COMPLETE
 **Phase 2 status**: ✅ COMPLETE

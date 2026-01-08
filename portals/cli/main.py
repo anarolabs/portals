@@ -641,7 +641,7 @@ def version(ctx: click.Context) -> None:
     click.echo(f"Portals version {__version__}")
     click.echo("Multi-platform document synchronization tool")
     click.echo("CLI command: portals")
-    click.echo("\nProject: https://github.com/paparomes/portals")
+    click.echo("\nProject: https://github.com/anarolabs/portals")
 
 
 # Register Google Docs commands
