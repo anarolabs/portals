@@ -23,12 +23,37 @@ class FormatRange:
 
 
 @dataclass
+class TableCell:
+    """A cell in a table."""
+
+    content: str
+    is_header: bool = False
+    format_ranges: list[FormatRange] = field(default_factory=list)
+
+
+@dataclass
+class TableData:
+    """Data for a table to be inserted."""
+
+    insert_index: int  # Where to insert the table in the document
+    rows: list[list[TableCell]]  # 2D array of cells
+    num_rows: int = 0
+    num_cols: int = 0
+
+    def __post_init__(self):
+        if self.rows:
+            self.num_rows = len(self.rows)
+            self.num_cols = max(len(row) for row in self.rows) if self.rows else 0
+
+
+@dataclass
 class ConversionResult:
     """Result of markdown to Google Docs conversion."""
 
     plain_text: str  # Text without markdown symbols
     format_ranges: list[FormatRange] = field(default_factory=list)
     list_ranges: list[dict[str, Any]] = field(default_factory=list)
+    tables: list[TableData] = field(default_factory=list)
 
 
 class GoogleDocsConverter:
@@ -40,6 +65,7 @@ class GoogleDocsConverter:
     def __init__(self):
         """Initialize converter."""
         self.md = MarkdownIt()
+        self.md.enable('table')  # Enable GFM-style table parsing
         self.current_index = 1  # Google Docs starts at index 1
 
     def markdown_to_gdocs(self, markdown: str) -> ConversionResult:
@@ -95,6 +121,8 @@ class GoogleDocsConverter:
                 i = self._process_code_block(token, i, result)
             elif token.type == "hr":
                 i = self._process_hr(token, i, result)
+            elif token.type == "table_open":
+                i = self._process_table(tokens, i, result)
             else:
                 i += 1
 
@@ -249,6 +277,14 @@ class GoogleDocsConverter:
                     )
                 )
                 text += code_text
+                i += 1
+            elif child.type == "softbreak":
+                # Soft line break (single newline in markdown) - preserve as newline
+                text += "\n"
+                i += 1
+            elif child.type == "hardbreak":
+                # Hard line break (two spaces + newline or <br>) - preserve as newline
+                text += "\n"
                 i += 1
             elif child.type == "link_open":
                 # Track link
@@ -486,6 +522,112 @@ class GoogleDocsConverter:
 
         return index + 1
 
+    def _process_table(
+        self,
+        tokens: list[Token],
+        index: int,
+        result: ConversionResult,
+    ) -> int:
+        """Process table tokens.
+
+        Args:
+            tokens: Token list
+            index: Current index (at table_open)
+            result: Result to update
+
+        Returns:
+            New index after processing
+        """
+        # Record where the table should be inserted
+        table_insert_index = self.current_index
+
+        rows: list[list[TableCell]] = []
+        current_row: list[TableCell] = []
+        in_header = False
+
+        i = index + 1
+        while i < len(tokens) and tokens[i].type != "table_close":
+            token = tokens[i]
+
+            if token.type == "thead_open":
+                in_header = True
+                i += 1
+            elif token.type == "thead_close":
+                in_header = False
+                i += 1
+            elif token.type == "tbody_open":
+                i += 1
+            elif token.type == "tbody_close":
+                i += 1
+            elif token.type == "tr_open":
+                current_row = []
+                i += 1
+            elif token.type == "tr_close":
+                if current_row:
+                    rows.append(current_row)
+                i += 1
+            elif token.type in ["th_open", "td_open"]:
+                # Start of a cell - find the inline content
+                i += 1
+                cell_content = ""
+                cell_formats: list[FormatRange] = []
+
+                while i < len(tokens) and tokens[i].type not in ["th_close", "td_close"]:
+                    if tokens[i].type == "inline":
+                        # Extract cell text content
+                        cell_content = self._extract_cell_text(tokens[i])
+                    i += 1
+
+                current_row.append(TableCell(
+                    content=cell_content,
+                    is_header=in_header,
+                    format_ranges=cell_formats
+                ))
+                i += 1  # Skip the close token
+            else:
+                i += 1
+
+        # Create TableData and add to result
+        if rows:
+            table_data = TableData(
+                insert_index=table_insert_index,
+                rows=rows
+            )
+            result.tables.append(table_data)
+
+            # Add a newline placeholder for the table location
+            # (the actual table will be inserted via batch requests)
+            result.plain_text += "\n"
+            self.current_index += 1
+
+        return i + 1  # Skip table_close
+
+    def _extract_cell_text(self, token: Token) -> str:
+        """Extract plain text from an inline token (for table cells).
+
+        Args:
+            token: Inline token
+
+        Returns:
+            Plain text content
+        """
+        if not token.children:
+            return ""
+
+        text = ""
+        for child in token.children:
+            if child.type == "text":
+                text += child.content
+            elif child.type in ["strong_open", "em_open", "link_open"]:
+                # Skip formatting markers, just get the text
+                continue
+            elif child.type in ["strong_close", "em_close", "link_close"]:
+                continue
+            elif child.type == "code_inline":
+                text += child.content
+
+        return text
+
     def generate_batch_requests(self, conversion: ConversionResult) -> list[dict[str, Any]]:
         """Generate Google Docs API batch update requests.
 
@@ -570,6 +712,14 @@ class GoogleDocsConverter:
             tabs_before = conversion.plain_text[:fmt.start_index].count('\t')
 
             if fmt.format_type == "heading":
+                # Map markdown headings to Google Docs styles:
+                # H1 -> Title, H2 -> Heading 1, H3 -> Heading 2, H4 -> Heading 3, etc.
+                # This allows H1 to use the document Title style
+                if fmt.level == 1:
+                    style_type = "TITLE"
+                else:
+                    style_type = f"HEADING_{fmt.level - 1}"
+
                 requests.append({
                     "updateParagraphStyle": {
                         "range": {
@@ -577,11 +727,13 @@ class GoogleDocsConverter:
                             "endIndex": fmt.end_index - tabs_before,
                         },
                         "paragraphStyle": {
-                            "namedStyleType": f"HEADING_{fmt.level}"
+                            "namedStyleType": style_type
                         },
                         "fields": "namedStyleType",
                     }
                 })
+                # Note: We intentionally do NOT clear background colors here
+                # to allow custom heading styles (with highlights) to be preserved
 
             elif fmt.format_type == "bold":
                 requests.append({
@@ -730,5 +882,194 @@ class GoogleDocsConverter:
                         "fields": "backgroundColor",
                     }
                 })
+
+        # Handle tables - these need special processing
+        # Tables are inserted as structures and require separate handling
+        if conversion.tables:
+            table_requests = self._generate_table_requests(conversion)
+            requests.extend(table_requests)
+
+        return requests
+
+    def _generate_table_requests(self, conversion: ConversionResult) -> list[dict[str, Any]]:
+        """Generate batch requests for inserting tables.
+
+        Tables in Google Docs require:
+        1. insertTable to create the structure
+        2. insertText for each cell's content
+        3. Formatting for header rows
+
+        Args:
+            conversion: Conversion result with table data
+
+        Returns:
+            List of batch update requests for tables
+        """
+        requests = []
+
+        # Process tables in reverse order to avoid index shifting issues
+        # (inserting later tables first means earlier table indices stay valid)
+        for table in reversed(conversion.tables):
+            # Adjust index for tabs that were removed by list formatting
+            tabs_before_table = conversion.plain_text[:table.insert_index].count('\t')
+            adjusted_index = table.insert_index - tabs_before_table
+
+            # 1. Insert the table structure
+            requests.append({
+                "insertTable": {
+                    "rows": table.num_rows,
+                    "columns": table.num_cols,
+                    "location": {"index": adjusted_index}
+                }
+            })
+
+            # 2. Insert cell content and apply header formatting
+            # After insertTable, we need to populate cells.
+            # Cell positions in a newly created table follow this pattern:
+            # - Table starts at index I
+            # - First cell paragraph starts at I + 4
+            # - Each cell adds: 2 (for empty cell) + len(content)
+            # - Each new row adds: 1 (for row boundary)
+            #
+            # We insert content in REVERSE order (last cell first) so indices don't shift
+
+            cell_requests = []
+            header_ranges = []
+
+            # Calculate initial cell position
+            # After insertTable at index I:
+            # - Table element at I
+            # - Table start at I+1
+            # - First row at I+2
+            # - First cell at I+3
+            # - First cell paragraph at I+4
+            base_index = adjusted_index + 4
+
+            # Track cumulative offset as we calculate cell positions
+            # Each empty cell has 1 character (newline), each row end has 1 char
+            current_index = base_index
+
+            # Build a map of cell positions (before any content is added)
+            cell_positions = []
+            for row_idx, row in enumerate(table.rows):
+                row_positions = []
+                for col_idx, cell in enumerate(row):
+                    row_positions.append(current_index)
+                    # Each cell has 2 chars: cell start + newline
+                    current_index += 2
+                # Row boundary
+                current_index += 1
+                cell_positions.append(row_positions)
+
+            # Now generate requests in reverse order
+            # We go from last row to first, last column to first
+            for row_idx in range(len(table.rows) - 1, -1, -1):
+                row = table.rows[row_idx]
+                for col_idx in range(len(row) - 1, -1, -1):
+                    cell = row[col_idx]
+                    if cell.content:
+                        cell_pos = cell_positions[row_idx][col_idx]
+                        cell_requests.append({
+                            "insertText": {
+                                "location": {"index": cell_pos},
+                                "text": cell.content
+                            }
+                        })
+
+                        # Track header cells for bold formatting
+                        if cell.is_header:
+                            header_ranges.append({
+                                "start": cell_pos,
+                                "end": cell_pos + len(cell.content),
+                                "text": cell.content
+                            })
+
+            requests.extend(cell_requests)
+
+            # 3. Apply table border styling (dotted, dark charcoal #2a2a3a)
+            # Dark charcoal matches the H1 heading background for visual consistency
+            requests.append({
+                "updateTableCellStyle": {
+                    "tableRange": {
+                        "tableCellLocation": {
+                            "tableStartLocation": {"index": adjusted_index + 1},
+                            "rowIndex": 0,
+                            "columnIndex": 0,
+                        },
+                        "rowSpan": table.num_rows,
+                        "columnSpan": table.num_cols,
+                    },
+                    "tableCellStyle": {
+                        "borderTop": {
+                            "color": {"color": {"rgbColor": {"red": 0.165, "green": 0.165, "blue": 0.227}}},
+                            "width": {"magnitude": 0.5, "unit": "PT"},
+                            "dashStyle": "DOT",
+                        },
+                        "borderBottom": {
+                            "color": {"color": {"rgbColor": {"red": 0.165, "green": 0.165, "blue": 0.227}}},
+                            "width": {"magnitude": 0.5, "unit": "PT"},
+                            "dashStyle": "DOT",
+                        },
+                        "borderLeft": {
+                            "color": {"color": {"rgbColor": {"red": 0.165, "green": 0.165, "blue": 0.227}}},
+                            "width": {"magnitude": 0.5, "unit": "PT"},
+                            "dashStyle": "DOT",
+                        },
+                        "borderRight": {
+                            "color": {"color": {"rgbColor": {"red": 0.165, "green": 0.165, "blue": 0.227}}},
+                            "width": {"magnitude": 0.5, "unit": "PT"},
+                            "dashStyle": "DOT",
+                        },
+                    },
+                    "fields": "borderTop,borderBottom,borderLeft,borderRight",
+                }
+            })
+
+            # 4. Style header row with light warm gray background (#f5f4f0) and dark text
+            # Neutral background that doesn't compete with heading highlight colors
+            if table.num_rows > 0 and table.rows[0][0].is_header:
+                # Apply light warm gray background to header row cells
+                requests.append({
+                    "updateTableCellStyle": {
+                        "tableRange": {
+                            "tableCellLocation": {
+                                "tableStartLocation": {"index": adjusted_index + 1},
+                                "rowIndex": 0,
+                                "columnIndex": 0,
+                            },
+                            "rowSpan": 1,
+                            "columnSpan": table.num_cols,
+                        },
+                        "tableCellStyle": {
+                            "backgroundColor": {
+                                "color": {"rgbColor": {"red": 0.961, "green": 0.957, "blue": 0.941}}
+                            },
+                        },
+                        "fields": "backgroundColor",
+                    }
+                })
+
+                # Apply bold and dark charcoal text to header cells individually
+                # Process each header cell separately to avoid index overflow
+                header_cell_start = adjusted_index + 4
+                for cell in table.rows[0]:
+                    if cell.content:
+                        requests.append({
+                            "updateTextStyle": {
+                                "range": {
+                                    "startIndex": header_cell_start,
+                                    "endIndex": header_cell_start + len(cell.content),
+                                },
+                                "textStyle": {
+                                    "foregroundColor": {
+                                        "color": {"rgbColor": {"red": 0.165, "green": 0.165, "blue": 0.227}}
+                                    },
+                                    "bold": True,
+                                },
+                                "fields": "foregroundColor,bold",
+                            }
+                        })
+                    # Move to next cell: content + 2 (cell markers)
+                    header_cell_start += len(cell.content) + 2
 
         return requests
