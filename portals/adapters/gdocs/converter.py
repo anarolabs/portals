@@ -77,6 +77,9 @@ class GoogleDocsConverter:
         Returns:
             ConversionResult with plain text and formatting information
         """
+        # Strip YAML frontmatter (--- delimited block at start of file)
+        markdown = re.sub(r'^---\s*\n.*?\n---\s*\n', '', markdown, count=1, flags=re.DOTALL)
+
         # Parse markdown
         tokens = self.md.parse(markdown)
 
