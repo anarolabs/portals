@@ -17,6 +17,8 @@ Usage:
     # Auto-detect from file path
     docs = get_docs_service(file_path="/Users/.../anaro-labs/memo.md")
 """
+from __future__ import annotations
+
 import sys
 import warnings
 from pathlib import Path
@@ -137,6 +139,12 @@ def _load_credentials(project: str):
     delegated_credentials = credentials.with_subject(impersonate_user)
 
     return delegated_credentials
+
+
+def get_impersonate_user(project: str = None, file_path: str = None) -> str:
+    """Get the impersonated email address for a project."""
+    resolved = _resolve_project(project, file_path)
+    return PROJECT_CONFIG[resolved]["impersonate_user"]
 
 
 def get_gmail_service(project: str = None, file_path: str = None):
