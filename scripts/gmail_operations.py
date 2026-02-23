@@ -470,7 +470,7 @@ def deep_read_email(message_id: str, project: str = None):
         sys.exit(1)
 
 
-def _extract_drive_file_id(url: str) -> str | None:
+def _extract_drive_file_id(url: str) -> "str | None":
     """Extract Google Drive file ID from various URL formats."""
     patterns = [
         r'/d/([a-zA-Z0-9_-]+)',           # /d/FILE_ID/
