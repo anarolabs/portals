@@ -58,11 +58,14 @@ Usage:
 import argparse
 import base64
 import json
+import mimetypes
 import os
 import re
 import sys
+from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email import encoders
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -487,17 +490,46 @@ def _extract_drive_file_id(url: str) -> "str | None":
     return None
 
 
+def _attach_file(message: MIMEMultipart, file_path: str):
+    """Attach a file to a MIMEMultipart message."""
+    path = Path(file_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Attachment not found: {file_path}")
+
+    content_type, _ = mimetypes.guess_type(str(path))
+    if content_type is None:
+        content_type = "application/octet-stream"
+    main_type, sub_type = content_type.split("/", 1)
+
+    with open(path, "rb") as f:
+        attachment = MIMEBase(main_type, sub_type)
+        attachment.set_payload(f.read())
+    encoders.encode_base64(attachment)
+    attachment.add_header("Content-Disposition", "attachment", filename=path.name)
+    message.attach(attachment)
+
+
 def create_draft(to: str, subject: str, body: str, cc: str = None,
                   thread_id: str = None, in_reply_to: str = None,
-                  references: str = None, project: str = None):
+                  references: str = None, project: str = None,
+                  attach: str = None):
     """Create email draft with YOUR formatting rules."""
     service = get_gmail_service(project=project)
 
     # Apply formatting rules
     html_body = format_body_html(body)
 
-    # Create message
-    message = MIMEMultipart("alternative")
+    # Use mixed multipart when attaching files, alternative otherwise
+    if attach:
+        message = MIMEMultipart("mixed")
+        alt_part = MIMEMultipart("alternative")
+        alt_part.attach(MIMEText(html_body, "html"))
+        message.attach(alt_part)
+        _attach_file(message, attach)
+    else:
+        message = MIMEMultipart("alternative")
+        message.attach(MIMEText(html_body, "html"))
+
     message["To"] = to
     message["Subject"] = subject
     if cc:
@@ -506,10 +538,6 @@ def create_draft(to: str, subject: str, body: str, cc: str = None,
         message["In-Reply-To"] = in_reply_to
     if references:
         message["References"] = references
-
-    # Attach HTML part (YOUR format rules applied)
-    html_part = MIMEText(html_body, "html")
-    message.attach(html_part)
 
     # Encode
     raw = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
@@ -542,15 +570,25 @@ def create_draft(to: str, subject: str, body: str, cc: str = None,
 
 def send_email(to: str, subject: str, body: str, cc: str = None,
                thread_id: str = None, in_reply_to: str = None,
-               references: str = None, project: str = None):
+               references: str = None, project: str = None,
+               attach: str = None):
     """Send email with YOUR formatting rules."""
     service = get_gmail_service(project=project)
 
     # Apply formatting rules
     html_body = format_body_html(body)
 
-    # Create message
-    message = MIMEMultipart("alternative")
+    # Use mixed multipart when attaching files, alternative otherwise
+    if attach:
+        message = MIMEMultipart("mixed")
+        alt_part = MIMEMultipart("alternative")
+        alt_part.attach(MIMEText(html_body, "html"))
+        message.attach(alt_part)
+        _attach_file(message, attach)
+    else:
+        message = MIMEMultipart("alternative")
+        message.attach(MIMEText(html_body, "html"))
+
     message["To"] = to
     message["Subject"] = subject
     if cc:
@@ -559,10 +597,6 @@ def send_email(to: str, subject: str, body: str, cc: str = None,
         message["In-Reply-To"] = in_reply_to
     if references:
         message["References"] = references
-
-    # Attach HTML part
-    html_part = MIMEText(html_body, "html")
-    message.attach(html_part)
 
     # Encode
     raw = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
@@ -638,6 +672,10 @@ def main():
     parser.add_argument("--body", help="Email body (plain text, will be formatted)")
     parser.add_argument("--max", type=int, default=10, help="Max search results (default: 10)")
 
+    # Attachment
+    parser.add_argument("--attach", metavar="FILE_PATH",
+                        help="Attach a file to draft or sent email")
+
     # Thread/reply arguments
     parser.add_argument("--reply-to", metavar="MESSAGE_ID",
                         help="Reply to this message (auto-resolves thread, to, subject)")
@@ -706,11 +744,13 @@ def main():
         if args.draft:
             create_draft(to, subject, args.body, args.cc,
                          thread_id=thread_id, in_reply_to=in_reply_to,
-                         references=references, project=args.project)
+                         references=references, project=args.project,
+                         attach=args.attach)
         else:
             send_email(to, subject, args.body, args.cc,
                        thread_id=thread_id, in_reply_to=in_reply_to,
-                       references=references, project=args.project)
+                       references=references, project=args.project,
+                       attach=args.attach)
 
     elif args.labels:
         list_labels(project=args.project)
