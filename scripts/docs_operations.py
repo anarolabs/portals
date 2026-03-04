@@ -513,6 +513,18 @@ def update_from_markdown(doc_id: str, markdown_file: str, project: str = None):
                     body={"requests": batch_requests}
                 ).execute()
 
+            # Sync document title from h1 heading
+            title_updated = False
+            for fmt in conversion.format_ranges:
+                if fmt.format_type == "heading" and fmt.level == 1 and fmt.text:
+                    drive_service = get_drive_service(project=resolved_project)
+                    drive_service.files().update(
+                        fileId=doc_id,
+                        body={"name": fmt.text}
+                    ).execute()
+                    title_updated = True
+                    break
+
             formatted = True
         else:
             # Fallback: plain text
@@ -521,6 +533,7 @@ def update_from_markdown(doc_id: str, markdown_file: str, project: str = None):
                 body={"requests": [{"insertText": {"location": {"index": 1}, "text": markdown_content}}]}
             ).execute()
             formatted = False
+            title_updated = False
 
         print(json.dumps({
             "success": True,
@@ -528,6 +541,7 @@ def update_from_markdown(doc_id: str, markdown_file: str, project: str = None):
             "title": doc.get("title"),
             "url": f"https://docs.google.com/document/d/{doc_id}/edit",
             "formatted": formatted,
+            "title_synced": title_updated,
             "project": resolved_project,
             "account": PROJECT_CONFIG[resolved_project]["impersonate_user"],
             "action": "updated"
