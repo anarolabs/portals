@@ -311,6 +311,22 @@ class GoogleDocsConverter:
                             fmt.followed_by_box = True
                             break
                     i = self._process_phase_metadata_block(tokens, i, result)
+                # After an h2 legend or guidance section, box all sub-content
+                if heading_level == 2 and self._document_model:
+                    section = self._document_model.section_for_token(heading_token_index)
+                    if section and section.section_type == SectionType.LEGEND:
+                        # Mark heading as followed by box for tight spacing
+                        for fmt in reversed(result.format_ranges):
+                            if fmt.format_type == "heading" and fmt.level == 2:
+                                fmt.followed_by_box = True
+                                break
+                        i = self._process_section_box(tokens, i, result, section, "legend")
+                    elif section and section.section_type == SectionType.GUIDANCE:
+                        for fmt in reversed(result.format_ranges):
+                            if fmt.format_type == "heading" and fmt.level == 2:
+                                fmt.followed_by_box = True
+                                break
+                        i = self._process_section_box(tokens, i, result, section, "guidance")
                 continue
             elif token.type == "paragraph_open":
                 self._last_heading_level = 0  # Reset subtitle detection
@@ -876,6 +892,22 @@ class GoogleDocsConverter:
         model.build_lookup(len(tokens))
         return model
 
+    @staticmethod
+    def _is_h2_immediately_after_h1(tokens: list[Token], h2_index: int) -> bool:
+        """Check if h2 directly follows h1 with no content blocks between."""
+        i = h2_index - 1
+        while i >= 0:
+            tok = tokens[i]
+            if tok.type in (
+                "paragraph_open", "bullet_list_open", "ordered_list_open",
+                "blockquote_open", "table_open", "code_block", "fence", "hr",
+            ):
+                return False
+            if tok.type == "heading_open" and tok.tag == "h1":
+                return True
+            i -= 1
+        return False
+
     def _classify_section(
         self,
         level: int,
@@ -889,7 +921,9 @@ class GoogleDocsConverter:
             return SectionType.TITLE
 
         if level == 2 and last_heading_level == 1:
-            return SectionType.SUBTITLE
+            # Only subtitle if h2 immediately follows h1 with no content blocks between
+            if self._is_h2_immediately_after_h1(tokens, index):
+                return SectionType.SUBTITLE
 
         text_lower = text.lower()
 
@@ -1535,17 +1569,31 @@ class GoogleDocsConverter:
 
             for i in range(1, len(conversion.list_ranges)):
                 curr = conversion.list_ranges[i]
-                prev = conversion.list_ranges[i-1]
 
-                # If same type and adjacent/overlapping, extend the current group
-                # Adjacent means the current item starts at or before the previous item's end
+                # Adjacent means the current item starts at or before the group's end.
                 is_adjacent = curr["start_index"] <= current_group["end_index"]
-                same_type = curr["ordered"] == current_group["ordered"]
 
-                if same_type and is_adjacent:
-                    current_group["end_index"] = max(current_group["end_index"], curr["end_index"])
+                if is_adjacent:
+                    # Nested child (nesting > 0): always merge into parent group,
+                    # even if ordered type differs (numbered parent + bullet children).
+                    is_nested_child = curr.get("nesting_level", 0) > 0
+                    # Root-level item with same list type: merge (sibling items).
+                    is_same_root = (curr.get("nesting_level", 0) == 0
+                                    and curr["ordered"] == current_group["ordered"])
+
+                    if is_nested_child or is_same_root:
+                        current_group["end_index"] = max(
+                            current_group["end_index"], curr["end_index"])
+                    else:
+                        # Adjacent but different type at root level = new list
+                        list_groups.append(current_group)
+                        current_group = {
+                            "ordered": curr["ordered"],
+                            "start_index": curr["start_index"],
+                            "end_index": curr["end_index"],
+                        }
                 else:
-                    # Different type or non-adjacent, start new group
+                    # Gap between items means separate lists
                     list_groups.append(current_group)
                     current_group = {
                         "ordered": curr["ordered"],
@@ -1623,17 +1671,25 @@ class GoogleDocsConverter:
                 else:
                     style_type = f"HEADING_{fmt.level - 1}"
 
+                # Legend/Guidance H2 headings: use HEADING_2 (neutral, no green bg)
+                # instead of the standard HEADING_1 which has a green background
+                section = None
+                if self._document_model and fmt.token_index is not None:
+                    section = self._document_model.section_for_token(fmt.token_index)
+                    if section and section.section_type in (SectionType.LEGEND, SectionType.GUIDANCE):
+                        style_type = "HEADING_2"
+
                 # Explicit spaceAbove for visual breathing room between sections
                 space_above = self.style_map.heading_space_above.get(fmt.level)
 
                 # Smart spacing: extra space after dense sections
-                if self._document_model and fmt.token_index is not None:
+                if section is None and self._document_model and fmt.token_index is not None:
                     section = self._document_model.section_for_token(fmt.token_index)
-                    if section:
-                        idx = self._document_model.sections.index(section)
-                        if idx > 0 and self._document_model.sections[idx - 1].is_dense:
-                            dense_space = self.style_map.dense_section_extra_space
-                            space_above = max(space_above or 0, dense_space)
+                if section:
+                    idx = self._document_model.sections.index(section)
+                    if idx > 0 and self._document_model.sections[idx - 1].is_dense:
+                        dense_space = self.style_map.dense_section_extra_space
+                        space_above = max(space_above or 0, dense_space)
 
                 paragraph_style: dict[str, Any] = {"namedStyleType": style_type}
                 fields = "namedStyleType"
