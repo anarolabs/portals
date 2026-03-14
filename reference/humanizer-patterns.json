@@ -1,0 +1,438 @@
+{
+  "version": "1.0",
+  "description": "AI writing detection patterns extracted from humanizer methodology",
+  "categories": [
+    {
+      "id": "punctuation",
+      "name": "Punctuation patterns",
+      "patterns": [
+        {
+          "pattern": "em_dash",
+          "detect": "Em dash character \u2014 or spaced em dash \u2014 used anywhere in text",
+          "replace": "Use spaced hyphens - or restructure the sentence into two clauses",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "The project \u2014 which started in January \u2014 is nearly complete.",
+              "good": "The project - which started in January - is nearly complete."
+            },
+            {
+              "bad": "We need three things\u2014speed, accuracy, and reliability.",
+              "good": "We need three things: speed, accuracy, and reliability."
+            }
+          ]
+        },
+        {
+          "pattern": "semicolon_overuse",
+          "detect": "Semicolons used more than once per 500 words",
+          "replace": "Split into separate sentences instead of joining with semicolons",
+          "severity": "flag",
+          "examples": [
+            {
+              "bad": "The team finished early; the client was pleased; we moved to the next phase.",
+              "good": "The team finished early. The client was pleased, so we moved to the next phase."
+            }
+          ]
+        },
+        {
+          "pattern": "colon_list_intro",
+          "detect": "Repeated pattern of 'noun: list' used to introduce enumerations",
+          "replace": "Vary sentence structure instead of always using colon introductions",
+          "severity": "flag",
+          "examples": [
+            {
+              "bad": "Benefits: faster delivery, lower cost, better quality. Risks: delays, budget overruns, scope creep.",
+              "good": "The main benefits are faster delivery, lower cost, and better quality. On the risk side, we could face delays or budget overruns."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "filler_phrases",
+      "name": "Filler and transition words",
+      "patterns": [
+        {
+          "pattern": "importantly",
+          "detect": "\"importantly\" or \"more importantly\"",
+          "replace": "Remove the word and state the point directly",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "More importantly, the data shows a clear trend.",
+              "good": "The data shows a clear trend."
+            }
+          ]
+        },
+        {
+          "pattern": "furthermore",
+          "detect": "\"furthermore\", \"moreover\", or \"additionally\"",
+          "replace": "Use \"also\" or restructure the sentence",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "Furthermore, the team identified two additional risks.",
+              "good": "The team also identified two additional risks."
+            },
+            {
+              "bad": "Moreover, the budget needs to be revised.",
+              "good": "The budget also needs to be revised."
+            }
+          ]
+        },
+        {
+          "pattern": "essentially",
+          "detect": "\"essentially\", \"fundamentally\", or \"basically\"",
+          "replace": "Remove the word entirely - the sentence is stronger without it",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "This is essentially a rewrite of the original system.",
+              "good": "This is a rewrite of the original system."
+            },
+            {
+              "bad": "Fundamentally, the architecture needs to change.",
+              "good": "The architecture needs to change."
+            }
+          ]
+        },
+        {
+          "pattern": "it_is_worth_noting",
+          "detect": "\"it is worth noting\", \"it should be noted\", or \"notably\"",
+          "replace": "Just state the thing directly",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "It is worth noting that the API has a rate limit of 100 requests per minute.",
+              "good": "The API has a rate limit of 100 requests per minute."
+            },
+            {
+              "bad": "Notably, three teams have already adopted the new process.",
+              "good": "Three teams have already adopted the new process."
+            }
+          ]
+        },
+        {
+          "pattern": "in_order_to",
+          "detect": "\"in order to\"",
+          "replace": "Replace with \"to\"",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "In order to deploy the fix, we need approval.",
+              "good": "To deploy the fix, we need approval."
+            }
+          ]
+        },
+        {
+          "pattern": "serves_as",
+          "detect": "\"serves as\" or \"acts as\"",
+          "replace": "Replace with \"is\"",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "The dashboard serves as the primary interface for monitoring.",
+              "good": "The dashboard is the primary interface for monitoring."
+            },
+            {
+              "bad": "This document acts as a guide for new hires.",
+              "good": "This document is a guide for new hires."
+            }
+          ]
+        },
+        {
+          "pattern": "plays_a_role",
+          "detect": "\"plays a crucial role\", \"plays a key role\", \"plays a vital role\", or similar constructions",
+          "replace": "Replace with a specific verb that describes the actual action",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "Testing plays a crucial role in ensuring software quality.",
+              "good": "Testing catches defects before they reach production."
+            },
+            {
+              "bad": "The team lead plays a key role in sprint planning.",
+              "good": "The team lead drives sprint planning."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inflated_language",
+      "name": "Inflated or corporate language",
+      "patterns": [
+        {
+          "pattern": "leverage",
+          "detect": "\"leverage\" used as a verb",
+          "replace": "Replace with \"use\"",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "We can leverage the existing infrastructure.",
+              "good": "We can use the existing infrastructure."
+            }
+          ]
+        },
+        {
+          "pattern": "utilize",
+          "detect": "\"utilize\" or \"utilization\"",
+          "replace": "Replace with \"use\"",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "We should utilize the new API endpoints.",
+              "good": "We should use the new API endpoints."
+            },
+            {
+              "bad": "Resource utilization is at 80%.",
+              "good": "Resource use is at 80%."
+            }
+          ]
+        },
+        {
+          "pattern": "robust",
+          "detect": "\"robust\" used outside of engineering or statistical contexts",
+          "replace": "Replace with a specific descriptor that says what you actually mean",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "We built a robust solution for handling payments.",
+              "good": "We built a payment solution that handles retries, partial failures, and currency conversion."
+            }
+          ]
+        },
+        {
+          "pattern": "ecosystem",
+          "detect": "\"ecosystem\" used outside of biology",
+          "replace": "Replace with \"system\" or a more specific term",
+          "severity": "flag",
+          "examples": [
+            {
+              "bad": "The company's partner ecosystem is growing rapidly.",
+              "good": "The company's partner network is growing rapidly."
+            }
+          ]
+        },
+        {
+          "pattern": "streamline",
+          "detect": "\"streamline\"",
+          "replace": "Replace with a specific action verb that describes what actually happens",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "We streamlined the onboarding process.",
+              "good": "We cut the onboarding process from 12 steps to 4."
+            }
+          ]
+        },
+        {
+          "pattern": "spearhead",
+          "detect": "\"spearhead\"",
+          "replace": "Replace with \"lead\" or \"start\"",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "She spearheaded the migration effort.",
+              "good": "She led the migration effort."
+            }
+          ]
+        },
+        {
+          "pattern": "holistic",
+          "detect": "\"holistic\" or \"comprehensive\"",
+          "replace": "Replace with the specific scope being described",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "We took a holistic approach to the redesign.",
+              "good": "We redesigned the frontend, backend, and data layer together."
+            },
+            {
+              "bad": "This is a comprehensive overview of the system.",
+              "good": "This covers the system's architecture, data flow, and deployment pipeline."
+            }
+          ]
+        },
+        {
+          "pattern": "cutting_edge",
+          "detect": "\"cutting-edge\", \"state-of-the-art\", or \"best-in-class\"",
+          "replace": "Replace with the specific capability or feature that makes it notable",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "We use cutting-edge machine learning techniques.",
+              "good": "We use transformer models fine-tuned on domain-specific data."
+            },
+            {
+              "bad": "Our best-in-class monitoring system detects issues fast.",
+              "good": "Our monitoring system detects anomalies within 30 seconds."
+            }
+          ]
+        },
+        {
+          "pattern": "paradigm",
+          "detect": "\"paradigm\" or \"paradigm shift\"",
+          "replace": "Describe the specific change instead of labeling it a paradigm shift",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "This represents a paradigm shift in how we handle deployments.",
+              "good": "We moved from monthly manual releases to continuous deployment."
+            }
+          ]
+        },
+        {
+          "pattern": "synergy",
+          "detect": "\"synergy\", \"synergize\", or \"synergistic\"",
+          "replace": "Replace with the specific collaboration outcome",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "There is strong synergy between the design and engineering teams.",
+              "good": "The design and engineering teams share a component library and review each other's work weekly."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "structure_patterns",
+      "name": "Structural AI tells",
+      "patterns": [
+        {
+          "pattern": "triple_parallel",
+          "detect": "Three parallel items with identical grammatical structure repeated 3+ times in a document",
+          "replace": "Vary the grammatical structure across parallel constructions",
+          "severity": "flag",
+          "examples": [
+            {
+              "bad": "Improving speed. Improving accuracy. Improving reliability. ... Reducing cost. Reducing risk. Reducing complexity.",
+              "good": "We improved speed and accuracy while making the system more reliable. ... Costs dropped, and we removed two sources of operational risk."
+            }
+          ]
+        },
+        {
+          "pattern": "topic_sentence_sameness",
+          "detect": "Paragraphs where the first sentence restates the previous paragraph's conclusion",
+          "replace": "Vary transitions so each paragraph opens with a new angle or fact",
+          "severity": "flag",
+          "examples": [
+            {
+              "bad": "The migration reduced downtime by 40%. Building on this reduction in downtime, the team then focused on...",
+              "good": "The migration reduced downtime by 40%. Next, the team turned to the API layer, where latency had become the bigger bottleneck."
+            }
+          ]
+        },
+        {
+          "pattern": "list_of_three",
+          "detect": "Repeated use of exactly three items in lists or enumerations throughout a document",
+          "replace": "Vary list lengths - use 2, 4, or 5 items instead of always defaulting to three",
+          "severity": "flag",
+          "examples": [
+            {
+              "bad": "We focused on speed, quality, and reliability. The key stakeholders are engineering, product, and design. The deliverables include a report, a dashboard, and a presentation.",
+              "good": "We focused on speed and reliability. The key stakeholders are engineering, product, design, and customer support. The deliverables include a report and a dashboard."
+            }
+          ]
+        },
+        {
+          "pattern": "however_but_opener",
+          "detect": "Sentences starting with \"However,\" or \"But,\" more than twice per page",
+          "replace": "Embed the contrast mid-sentence instead of opening with it",
+          "severity": "flag",
+          "examples": [
+            {
+              "bad": "However, the timeline was too aggressive.",
+              "good": "The timeline turned out to be too aggressive."
+            },
+            {
+              "bad": "But, the client wanted a different approach.",
+              "good": "The client, though, wanted a different approach."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hedge_words",
+      "name": "Excessive hedging",
+      "patterns": [
+        {
+          "pattern": "might_seem",
+          "detect": "\"might\", \"seems\", or \"appears\" used more than twice per paragraph",
+          "replace": "Make direct statements instead of hedging",
+          "severity": "flag",
+          "examples": [
+            {
+              "bad": "This might improve performance. It seems like the bottleneck appears to be in the database layer.",
+              "good": "This will improve performance. The bottleneck is in the database layer."
+            }
+          ]
+        },
+        {
+          "pattern": "arguably",
+          "detect": "\"arguably\", \"perhaps\", or \"potentially\"",
+          "replace": "Commit to the claim or remove the hedge",
+          "severity": "flag",
+          "examples": [
+            {
+              "bad": "This is arguably the most important feature we shipped this quarter.",
+              "good": "This is the most important feature we shipped this quarter."
+            },
+            {
+              "bad": "Perhaps we should reconsider the architecture.",
+              "good": "We should reconsider the architecture."
+            }
+          ]
+        },
+        {
+          "pattern": "tend_to",
+          "detect": "\"tend to\" or \"tends to\"",
+          "replace": "Replace with a direct verb",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "Large teams tend to move slower.",
+              "good": "Large teams move slower."
+            },
+            {
+              "bad": "This approach tends to produce better results.",
+              "good": "This approach produces better results."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "synonym_cycling",
+      "name": "Unnatural synonym variation",
+      "patterns": [
+        {
+          "pattern": "said_cycling",
+          "detect": "Alternating between \"said\", \"stated\", \"noted\", \"remarked\", and \"observed\" for attribution in the same piece",
+          "replace": "Pick one attribution verb (usually \"said\") and stick with it",
+          "severity": "flag",
+          "examples": [
+            {
+              "bad": "\"We're on track,\" she said. \"The risks are manageable,\" he noted. \"We'll deliver on time,\" the PM remarked.",
+              "good": "\"We're on track,\" she said. \"The risks are manageable,\" he said. \"We'll deliver on time,\" the PM said."
+            }
+          ]
+        },
+        {
+          "pattern": "adjective_cycling",
+          "detect": "Same concept described with different adjectives in adjacent sentences",
+          "replace": "Remove redundant descriptors - say it once well instead of twice differently",
+          "severity": "flag",
+          "examples": [
+            {
+              "bad": "The system is highly performant. It delivers exceptional speed across all operations.",
+              "good": "The system handles 10,000 requests per second with p99 latency under 50ms."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

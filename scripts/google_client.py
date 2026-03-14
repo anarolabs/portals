@@ -199,6 +199,19 @@ def get_sheets_service(project: str = None, file_path: str = None):
     return service
 
 
+def get_slides_service(project: str = None, file_path: str = None):
+    """Get authenticated Google Slides API service."""
+    if not _check_dependencies():
+        sys.exit(1)
+
+    from googleapiclient.discovery import build
+
+    resolved_project = _resolve_project(project, file_path)
+    credentials = _load_credentials(resolved_project)
+    service = build("slides", "v1", credentials=credentials)
+    return service
+
+
 def verify_setup(project: str = None):
     """Verify service account setup is working."""
     resolved_project = _resolve_project(project)

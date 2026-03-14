@@ -54,6 +54,10 @@ Usage:
 
     # List labels
     python3 gmail_operations.py --labels [--project estate-mate]
+
+    # Modify labels on a message
+    python3 gmail_operations.py --modify-labels MESSAGE_ID --add-labels "Newsletters/Processed" --remove-labels "Newsletters/Unprocessed" --project anaro-labs
+    python3 gmail_operations.py --modify-labels MESSAGE_ID --add-labels "Newsletters/Flagged" --project anaro-labs
 """
 import argparse
 import base64
@@ -643,6 +647,77 @@ def list_labels(project: str = None):
         sys.exit(1)
 
 
+def modify_labels(message_id: str, add_labels: list = None, remove_labels: list = None, project: str = None):
+    """Add and/or remove labels from a message by label name."""
+    service = get_gmail_service(project=project)
+
+    try:
+        # Fetch all labels to build name -> id mapping
+        all_labels = service.users().labels().list(userId="me").execute().get("labels", [])
+        name_to_id = {l["name"]: l["id"] for l in all_labels}
+        label_types = {l["name"]: l.get("type", "user") for l in all_labels}
+
+        def resolve_label_id(label_name: str) -> str:
+            """Resolve a label name to its ID, creating user labels if needed."""
+            if label_name in name_to_id:
+                return name_to_id[label_name]
+
+            # System labels can't be created - error out
+            # (system labels like INBOX, SPAM etc. always exist, so this catches typos)
+            system_names = [n for n, t in label_types.items() if t == "system"]
+            if label_name.upper() in [s.upper() for s in system_names]:
+                raise ValueError(f"System label '{label_name}' not found (check spelling)")
+
+            # Create user label
+            created = service.users().labels().create(
+                userId="me",
+                body={
+                    "name": label_name,
+                    "labelListVisibility": "labelShow",
+                    "messageListVisibility": "show",
+                }
+            ).execute()
+            # Cache for subsequent lookups
+            name_to_id[created["name"]] = created["id"]
+            label_types[created["name"]] = "user"
+            return created["id"]
+
+        add_ids = [resolve_label_id(n) for n in (add_labels or [])]
+        remove_ids = [resolve_label_id(n) for n in (remove_labels or [])]
+
+        # Build modify request body
+        modify_body = {}
+        if add_ids:
+            modify_body["addLabelIds"] = add_ids
+        if remove_ids:
+            modify_body["removeLabelIds"] = remove_ids
+
+        result = service.users().messages().modify(
+            userId="me",
+            id=message_id,
+            body=modify_body
+        ).execute()
+
+        # Map updated label IDs back to names
+        id_to_name = {v: k for k, v in name_to_id.items()}
+        updated_labels = [id_to_name.get(lid, lid) for lid in result.get("labelIds", [])]
+
+        output = {
+            "success": True,
+            "message_id": message_id,
+            "added": add_labels or [],
+            "removed": remove_labels or [],
+            "current_labels": updated_labels,
+            "inbox": get_impersonate_user(project=project),
+        }
+
+        print(json.dumps(output, indent=2))
+
+    except Exception as e:
+        print(json.dumps({"error": str(e)}), file=sys.stderr)
+        sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Unified multi-project Gmail operations")
 
@@ -660,6 +735,11 @@ def main():
     group.add_argument("--draft", action="store_true", help="Create draft")
     group.add_argument("--send", action="store_true", help="Send email")
     group.add_argument("--labels", action="store_true", help="List labels")
+    group.add_argument("--modify-labels", metavar="MESSAGE_ID", help="Add/remove labels on a message")
+
+    # Label modification arguments
+    parser.add_argument("--add-labels", help="Comma-separated label names to add (for --modify-labels)")
+    parser.add_argument("--remove-labels", help="Comma-separated label names to remove (for --modify-labels)")
 
     # Attachment arguments
     parser.add_argument("--attachment-id", help="Attachment ID (for --download-attachment)")
@@ -754,6 +834,13 @@ def main():
 
     elif args.labels:
         list_labels(project=args.project)
+
+    elif args.modify_labels:
+        if not args.add_labels and not args.remove_labels:
+            parser.error("--modify-labels requires at least one of --add-labels or --remove-labels")
+        add_list = [l.strip() for l in args.add_labels.split(",")] if args.add_labels else []
+        remove_list = [l.strip() for l in args.remove_labels.split(",")] if args.remove_labels else []
+        modify_labels(args.modify_labels, add_labels=add_list, remove_labels=remove_list, project=args.project)
 
 
 if __name__ == "__main__":
