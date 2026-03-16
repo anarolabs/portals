@@ -931,9 +931,14 @@ def check_comments(doc_id: str, project: str = None):
 def patch_document(doc_id: str, ops_file: str, project: str = None):
     """Apply targeted element-level edits from an operations JSON file.
 
-    Supports: replaceText, insertText, deleteContent, updateParagraphStyle,
-    updateTextStyle, updateTableCellStyle, updateTableBorders, createChecklist.
+    Supports: replaceText, replaceMarkdown, insertText, deleteContent,
+    updateParagraphStyle, updateTextStyle, updateTableCellStyle,
+    updateTableBorders, createChecklist.
     Content-modifying operations are auto-sorted in reverse index order.
+
+    replaceMarkdown deletes [startIndex, endIndex) then inserts formatted markdown
+    at startIndex using the converter (headings, bold, italic, native bullet lists,
+    etc.). Formatting is applied in a second batchUpdate pass.
     """
     resolved_project = _resolve_project(project)
     docs_service = get_docs_service(project=resolved_project)
@@ -947,6 +952,7 @@ def patch_document(doc_id: str, ops_file: str, project: str = None):
     requests = []
     content_ops = []  # (sort_key, [requests])
     style_ops = []
+    markdown_format_ops = []  # (startIndex, plain_text, batch_requests) for second pass
 
     for op in ops:
         op_type = op.get("type")
@@ -956,6 +962,30 @@ def patch_document(doc_id: str, ops_file: str, project: str = None):
                 {"deleteContentRange": {"range": {"startIndex": op["startIndex"], "endIndex": op["endIndex"]}}},
                 {"insertText": {"location": {"index": op["startIndex"]}, "text": op["newText"]}},
             ]))
+        elif op_type == "replaceMarkdown":
+            # Load converter on first use
+            portals_path = Path.home() / "Documents/Claude Code/portals/portals/adapters/gdocs/converter.py"
+            if not portals_path.exists():
+                print(json.dumps({"error": "Converter not found at portals/portals/adapters/gdocs/converter.py"}), file=sys.stderr)
+                sys.exit(1)
+            if str(portals_path.parent.parent.parent.parent) not in sys.path:
+                sys.path.insert(0, str(portals_path.parent.parent.parent.parent))
+            from portals.adapters.gdocs.converter import GoogleDocsConverter
+
+            converter = GoogleDocsConverter()
+            conversion = converter.markdown_to_gdocs(op["markdown"])
+            plain_text = conversion.plain_text
+            batch_requests = converter.generate_batch_requests(conversion)
+
+            # Content part: delete range then insert plain text (sorted with other content ops)
+            content_ops.append((op["startIndex"], [
+                {"deleteContentRange": {"range": {"startIndex": op["startIndex"], "endIndex": op["endIndex"]}}},
+                {"insertText": {"location": {"index": op["startIndex"]}, "text": plain_text}},
+            ]))
+
+            # Formatting part: applied in a second batchUpdate after text is in place
+            if batch_requests:
+                markdown_format_ops.append((op["startIndex"], plain_text, batch_requests))
         elif op_type == "insertText":
             content_ops.append((op["index"], [
                 {"insertText": {"location": {"index": op["index"]}, "text": op["text"]}},
@@ -1042,21 +1072,59 @@ def patch_document(doc_id: str, ops_file: str, project: str = None):
         requests.extend(reqs)
     requests.extend(style_ops)
 
-    if not requests:
+    if not requests and not markdown_format_ops:
         print(json.dumps({"error": "No valid operations found"}), file=sys.stderr)
         sys.exit(1)
 
     try:
-        docs_service.documents().batchUpdate(
-            documentId=doc_id,
-            body={"requests": requests},
-        ).execute()
+        total_requests_sent = 0
+
+        # Pass 1: content modifications + style ops
+        if requests:
+            docs_service.documents().batchUpdate(
+                documentId=doc_id,
+                body={"requests": requests},
+            ).execute()
+            total_requests_sent += len(requests)
+
+        # Pass 2: markdown formatting (must happen after text is inserted)
+        # Converter requests assume text starts at index 1; offset to actual startIndex.
+        # Also reset inserted range to NORMAL_TEXT first to clear inherited styles.
+        if markdown_format_ops:
+            format_requests = []
+            for start_index, plain_text, batch_reqs in markdown_format_ops:
+                content_end = start_index + len(plain_text)
+
+                # Reset to NORMAL_TEXT to clear inherited heading/spacing styles
+                format_requests.append({
+                    "updateParagraphStyle": {
+                        "range": {"startIndex": start_index, "endIndex": content_end},
+                        "paragraphStyle": {
+                            "namedStyleType": "NORMAL_TEXT",
+                            "spaceAbove": {"magnitude": 0, "unit": "PT"},
+                            "spaceBelow": {"magnitude": 0, "unit": "PT"},
+                        },
+                        "fields": "namedStyleType,spaceAbove,spaceBelow",
+                    }
+                })
+
+                # Offset converter requests: converter assumes index 1, actual is start_index
+                offset = start_index - 1
+                offset_reqs = json.loads(json.dumps(batch_reqs))  # deep copy
+                _offset_indices(offset_reqs, offset)
+                format_requests.extend(offset_reqs)
+
+            docs_service.documents().batchUpdate(
+                documentId=doc_id,
+                body={"requests": format_requests},
+            ).execute()
+            total_requests_sent += len(format_requests)
 
         print(json.dumps({
             "success": True,
             "document_id": doc_id,
             "operations_applied": len(ops),
-            "batch_requests_sent": len(requests),
+            "batch_requests_sent": total_requests_sent,
             "project": resolved_project,
         }, indent=2))
 

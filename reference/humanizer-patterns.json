@@ -337,6 +337,26 @@
           ]
         },
         {
+          "pattern": "correctio_rebuttal",
+          "detect": "\"Not because X, but because Y\", \"Not X - Y\", \"Not that X, but Y\" and similar negation-correction constructions that preemptively dismiss a strawman",
+          "replace": "State the actual reason directly. Drop the negation half entirely - it adds nothing if the reader wasn't thinking it",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "Not because we can't build self-service, but because we need to learn through manual reps.",
+              "good": "We need to learn through manual reps."
+            },
+            {
+              "bad": "We chose Python not for its speed, but for its ecosystem.",
+              "good": "We chose Python for its ecosystem."
+            },
+            {
+              "bad": "This isn't about cutting costs - it's about reducing cycle time.",
+              "good": "This reduces cycle time."
+            }
+          ]
+        },
+        {
           "pattern": "however_but_opener",
           "detect": "Sentences starting with \"However,\" or \"But,\" more than twice per page",
           "replace": "Embed the contrast mid-sentence instead of opening with it",

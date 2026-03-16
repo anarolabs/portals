@@ -182,6 +182,36 @@ class StyleMap:
     guidance_box_border: tuple = (0.827, 0.878, 0.941)      # #d3e0f0
     guidance_box_border_width: float = 0.75
 
+    # Admonition / callout box styling
+    # Each preset: (icon, bg_color, border_color)
+    admonition_presets: dict = field(default_factory=lambda: {
+        "WARNING": {
+            "icon": "\u2757",                                # ❗
+            "bg": (1.0, 0.949, 0.8),                         # warm yellow
+            "border": (0.69, 0.49, 0.188),                   # amber
+        },
+        "NOTE": {
+            "icon": "\u2139\uFE0F",                          # ℹ️
+            "bg": (0.85, 0.92, 1.0),                         # light blue
+            "border": (0.26, 0.43, 0.72),                    # blue
+        },
+        "INFO": {
+            "icon": "\u2139\uFE0F",                          # ℹ️
+            "bg": (0.85, 0.92, 1.0),                         # light blue
+            "border": (0.26, 0.43, 0.72),                    # blue
+        },
+        "SUCCESS": {
+            "icon": "\u2705",                                # ✅
+            "bg": (0.85, 1.0, 0.88),                         # light green
+            "border": (0.22, 0.56, 0.24),                    # green
+        },
+    })
+    admonition_icon_col_width: float = 27.0     # pt, FIXED_WIDTH
+    admonition_text_col_width: float = 500.25   # pt, FIXED_WIDTH
+    admonition_icon_font_size: float = 18.0     # pt
+    admonition_cell_padding: float = 5.0        # pt all sides
+    admonition_border_width: float = 1.0        # pt
+
     # Step metadata de-emphasis (paragraphs starting with `code` spans)
     step_metadata_color: tuple = (0.6, 0.6, 0.6)           # #999999
     step_metadata_font_size: float = 9.0
@@ -219,6 +249,7 @@ class TableData:
     num_cols: int = 0
     is_info_box: bool = False  # Single-cell phase metadata info box
     box_type: str | None = None  # Color routing: "phase_metadata", "legend", "guidance"
+    admonition_type: str | None = None  # Callout variant: "WARNING", "NOTE", "INFO", "SUCCESS"
 
     def __post_init__(self):
         if self.rows:
@@ -1305,6 +1336,10 @@ class GoogleDocsConverter:
     ) -> int:
         """Process blockquote tokens.
 
+        Detects GitHub-style admonition syntax (> [!WARNING] ...) and routes
+        to _process_admonition for callout box rendering. Falls back to
+        standard blockquote formatting otherwise.
+
         Args:
             tokens: Token list
             index: Current index
@@ -1313,6 +1348,11 @@ class GoogleDocsConverter:
         Returns:
             New index after processing
         """
+        # Check for admonition syntax: first inline child starts with [!TYPE]
+        admonition_type = self._detect_admonition(tokens, index)
+        if admonition_type:
+            return self._process_admonition(tokens, index, result, admonition_type)
+
         start_index = self.current_index
 
         i = index + 1
@@ -1332,6 +1372,155 @@ class GoogleDocsConverter:
                 format_type="blockquote",
             )
         )
+
+        return i
+
+    def _detect_admonition(
+        self,
+        tokens: list[Token],
+        blockquote_index: int,
+    ) -> str | None:
+        """Check if a blockquote is a GitHub-style admonition.
+
+        Looks for [!WARNING], [!NOTE], [!INFO], or [!SUCCESS] at the start
+        of the first inline content inside the blockquote.
+
+        Args:
+            tokens: Token list
+            blockquote_index: Index of blockquote_open token
+
+        Returns:
+            Admonition type string (e.g. "WARNING") or None
+        """
+        i = blockquote_index + 1
+        while i < len(tokens) and tokens[i].type != "blockquote_close":
+            if tokens[i].type == "paragraph_open":
+                # Find the inline token inside this paragraph
+                j = i + 1
+                while j < len(tokens) and tokens[j].type != "paragraph_close":
+                    if tokens[j].type == "inline":
+                        content = tokens[j].content
+                        m = re.match(r'^\[!(WARNING|NOTE|INFO|SUCCESS)\]\s*', content)
+                        if m:
+                            return m.group(1)
+                        return None
+                    j += 1
+                return None
+            i += 1
+        return None
+
+    def _process_admonition(
+        self,
+        tokens: list[Token],
+        index: int,
+        result: ConversionResult,
+        admonition_type: str,
+    ) -> int:
+        """Process a blockquote as an admonition callout box.
+
+        Builds a 1-row, 2-column table: column 1 = icon emoji, column 2 = text.
+        The table is added to result.tables for rendering by _generate_table_requests.
+
+        Args:
+            tokens: Token list
+            index: Index of blockquote_open token
+            result: Result to update
+            admonition_type: "WARNING", "NOTE", "INFO", or "SUCCESS"
+
+        Returns:
+            New index past blockquote_close
+        """
+        insert_index = self.current_index
+
+        # Collect all text content from the blockquote paragraphs
+        body_text = ""
+        body_formats: list[FormatRange] = []
+
+        i = index + 1
+        first_para = True
+        while i < len(tokens) and tokens[i].type != "blockquote_close":
+            if tokens[i].type == "paragraph_open":
+                i += 1  # skip paragraph_open
+                while i < len(tokens) and tokens[i].type != "paragraph_close":
+                    if tokens[i].type == "inline":
+                        para_text, para_fmts = self._extract_cell_content(tokens[i])
+
+                        # Strip the [!TYPE] prefix from the first paragraph
+                        if first_para:
+                            m = re.match(r'^\[!(WARNING|NOTE|INFO|SUCCESS)\]\s*', para_text)
+                            if m:
+                                prefix_len = m.end()
+                                para_text = para_text[prefix_len:]
+                                # Shift format ranges by the stripped prefix
+                                shifted_fmts = []
+                                for fmt in para_fmts:
+                                    new_start = fmt.start_index - prefix_len
+                                    new_end = fmt.end_index - prefix_len
+                                    if new_end > 0:
+                                        shifted_fmts.append(FormatRange(
+                                            start_index=max(0, new_start),
+                                            end_index=new_end,
+                                            format_type=fmt.format_type,
+                                            url=fmt.url,
+                                            text=fmt.text,
+                                        ))
+                                para_fmts = shifted_fmts
+                            first_para = False
+
+                        if para_text:
+                            if body_text:
+                                body_text += "\n"
+                            offset = len(body_text)
+                            for fmt in para_fmts:
+                                body_formats.append(FormatRange(
+                                    start_index=fmt.start_index + offset,
+                                    end_index=fmt.end_index + offset,
+                                    format_type=fmt.format_type,
+                                    url=fmt.url,
+                                    text=fmt.text,
+                                ))
+                            body_text += para_text
+                    i += 1
+                i += 1  # skip paragraph_close
+                continue
+            i += 1
+
+        # Skip blockquote_close
+        i += 1
+
+        if body_text:
+            # Get icon from style presets
+            preset = self.style_map.admonition_presets.get(admonition_type, {})
+            icon = preset.get("icon", "\u2757")
+
+            # Build the two cells
+            icon_cell = TableCell(content=icon, is_header=False)
+            text_cell = TableCell(
+                content=body_text,
+                is_header=False,
+                format_ranges=body_formats,
+            )
+
+            table_data = TableData(
+                insert_index=insert_index,
+                rows=[[icon_cell, text_cell]],
+                is_info_box=True,
+                box_type="admonition",
+                admonition_type=admonition_type,
+            )
+            result.tables.append(table_data)
+
+            # Add newline placeholder for the table location
+            spacer_start = self.current_index
+            result.plain_text += "\n"
+            self.current_index += 1
+            result.format_ranges.append(
+                FormatRange(
+                    start_index=spacer_start,
+                    end_index=self.current_index,
+                    format_type="table_spacer",
+                )
+            )
 
         return i
 
@@ -1531,6 +1720,9 @@ class GoogleDocsConverter:
                 i += skip_count
             elif child.type == "code_inline":
                 text += child.content
+                i += 1
+            elif child.type in ("softbreak", "hardbreak"):
+                text += " "
                 i += 1
             elif child.type in ["strong_close", "em_close", "link_close"]:
                 i += 1
@@ -2146,8 +2338,124 @@ class GoogleDocsConverter:
 
             # 3. Apply border and background styling
             # Info boxes get colored SOLID borders + bg + padding;
+            # Admonition callout boxes get DOTTED borders + variant bg + fixed column widths;
             # regular data tables get dark charcoal DOT borders
-            if table.is_info_box:
+            if table.is_info_box and table.box_type == "admonition":
+                # Admonition callout box: 2-column table with icon + text
+                adm_preset = self.style_map.admonition_presets.get(
+                    table.admonition_type or "WARNING", {}
+                )
+                adm_bg = adm_preset.get("bg", (1.0, 0.949, 0.8))
+                adm_bd = adm_preset.get("border", (0.69, 0.49, 0.188))
+                adm_bw = self.style_map.admonition_border_width
+                adm_pad = self.style_map.admonition_cell_padding
+
+                adm_border_def = {
+                    "color": {"color": {"rgbColor": {"red": adm_bd[0], "green": adm_bd[1], "blue": adm_bd[2]}}},
+                    "width": {"magnitude": adm_bw, "unit": "PT"},
+                    "dashStyle": "DOT",
+                }
+
+                # Set fixed column widths
+                table_start = adjusted_index + 1
+                requests.append({
+                    "updateTableColumnProperties": {
+                        "tableStartLocation": {"index": table_start},
+                        "columnIndices": [0],
+                        "tableColumnProperties": {
+                            "widthType": "FIXED_WIDTH",
+                            "width": {"magnitude": self.style_map.admonition_icon_col_width, "unit": "PT"},
+                        },
+                        "fields": "widthType,width",
+                    }
+                })
+                requests.append({
+                    "updateTableColumnProperties": {
+                        "tableStartLocation": {"index": table_start},
+                        "columnIndices": [1],
+                        "tableColumnProperties": {
+                            "widthType": "FIXED_WIDTH",
+                            "width": {"magnitude": self.style_map.admonition_text_col_width, "unit": "PT"},
+                        },
+                        "fields": "widthType,width",
+                    }
+                })
+
+                # Apply cell style to both cells (bg, borders, padding, alignment)
+                requests.append({
+                    "updateTableCellStyle": {
+                        "tableRange": {
+                            "tableCellLocation": {
+                                "tableStartLocation": {"index": table_start},
+                                "rowIndex": 0,
+                                "columnIndex": 0,
+                            },
+                            "rowSpan": 1,
+                            "columnSpan": 2,
+                        },
+                        "tableCellStyle": {
+                            "backgroundColor": {
+                                "color": {"rgbColor": {"red": adm_bg[0], "green": adm_bg[1], "blue": adm_bg[2]}}
+                            },
+                            "borderTop": adm_border_def,
+                            "borderBottom": adm_border_def,
+                            "borderLeft": adm_border_def,
+                            "borderRight": adm_border_def,
+                            "paddingTop": {"magnitude": adm_pad, "unit": "PT"},
+                            "paddingBottom": {"magnitude": adm_pad, "unit": "PT"},
+                            "paddingLeft": {"magnitude": adm_pad, "unit": "PT"},
+                            "paddingRight": {"magnitude": adm_pad, "unit": "PT"},
+                            "contentAlignment": "TOP",
+                        },
+                        "fields": "backgroundColor,borderTop,borderBottom,borderLeft,borderRight,paddingTop,paddingBottom,paddingLeft,paddingRight,contentAlignment",
+                    }
+                })
+
+                # Style the icon cell: 18pt font size
+                icon_cell = table.rows[0][0]
+                if icon_cell.content:
+                    icon_pos = filled_positions[0][0]
+                    icon_end = icon_pos + _utf16_len(icon_cell.content)
+                    requests.append({
+                        "updateTextStyle": {
+                            "range": {"startIndex": icon_pos, "endIndex": icon_end},
+                            "textStyle": {
+                                "fontSize": {"magnitude": self.style_map.admonition_icon_font_size, "unit": "PT"},
+                            },
+                            "fields": "fontSize",
+                        }
+                    })
+                    # Tight paragraph spacing for icon cell
+                    requests.append({
+                        "updateParagraphStyle": {
+                            "range": {"startIndex": icon_pos, "endIndex": icon_end},
+                            "paragraphStyle": {
+                                "lineSpacing": 100,
+                                "spaceAbove": {"magnitude": 0, "unit": "PT"},
+                                "spaceBelow": {"magnitude": 0, "unit": "PT"},
+                            },
+                            "fields": "lineSpacing,spaceAbove,spaceBelow",
+                        }
+                    })
+
+                # Tight paragraph spacing for text cell
+                text_cell = table.rows[0][1] if len(table.rows[0]) > 1 else None
+                if text_cell and text_cell.content:
+                    text_pos = filled_positions[0][1]
+                    text_end = text_pos + _utf16_len(text_cell.content)
+                    requests.append({
+                        "updateParagraphStyle": {
+                            "range": {"startIndex": text_pos, "endIndex": text_end},
+                            "paragraphStyle": {
+                                "lineSpacing": 100,
+                                "spaceAbove": {"magnitude": 0, "unit": "PT"},
+                                "spaceBelow": {"magnitude": 0, "unit": "PT"},
+                            },
+                            "fields": "lineSpacing,spaceAbove,spaceBelow",
+                        }
+                    })
+
+            elif table.is_info_box:
                 # Route colors based on box_type
                 if table.box_type == "legend":
                     ib_bg = self.style_map.legend_box_bg
