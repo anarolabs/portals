@@ -1,0 +1,55 @@
+{
+  "anaro-labs": {
+    "cache_path": "/Users/romansiepelmeyer/Documents/Claude Code/anaro-labs/.scan-cache.json",
+    "last_scan_path": "/Users/romansiepelmeyer/Documents/Claude Code/anaro-labs/.last-scan",
+    "project_root": "/Users/romansiepelmeyer/Documents/Claude Code/anaro-labs",
+    "gmail": {
+      "type": "label_based",
+      "script": "/Users/romansiepelmeyer/Documents/Claude Code/anaro-labs/00-meta/scripts/query-gmail-clients.py"
+    },
+    "linear": {
+      "type": "dashboard",
+      "script": "/Users/romansiepelmeyer/Documents/Claude Code/anaro-labs/00-meta/scripts/query-linear-issues.py"
+    },
+    "granola": {
+      "script": "/Users/romansiepelmeyer/Documents/Claude Code/anaro-labs/00-meta/scripts/extract-granola-notes.py",
+      "known_domains": "/Users/romansiepelmeyer/Documents/Claude Code/anaro-labs/00-meta/config/known-domains.json",
+      "knowledge_tracks": "/Users/romansiepelmeyer/Documents/Claude Code/anaro-labs/00-meta/config/knowledge-tracks.json"
+    },
+    "calendar": {
+      "script": "/Users/romansiepelmeyer/Documents/Claude Code/anaro-labs/00-meta/scripts/calendar_operations.py"
+    },
+    "thread_fetcher": {
+      "script": "/Users/romansiepelmeyer/Documents/Claude Code/anaro-labs/00-meta/scripts/fetch-email-thread.py"
+    },
+    "identity": "roman@anarolabs.com",
+    "google_project": "anaro-labs"
+  },
+  "estate-mate": {
+    "cache_path": "/Users/romansiepelmeyer/Documents/Claude Code/estate-mate/.scan-cache.json",
+    "last_scan_path": "/Users/romansiepelmeyer/Documents/Claude Code/estate-mate/.last-scan",
+    "project_root": "/Users/romansiepelmeyer/Documents/Claude Code/estate-mate",
+    "gmail": {
+      "type": "domain_based",
+      "script": "/Users/romansiepelmeyer/Documents/Claude Code/estate-mate/00-meta/scripts/query-gmail-estatemate.py"
+    },
+    "linear": {
+      "type": "crud_list",
+      "script": "/Users/romansiepelmeyer/Documents/Claude Code/estate-mate/00-meta/scripts/linear_operations.py"
+    },
+    "granola": {
+      "script": "/Users/romansiepelmeyer/Documents/Claude Code/anaro-labs/00-meta/scripts/extract-granola-notes.py",
+      "known_domains": "/Users/romansiepelmeyer/Documents/Claude Code/estate-mate/00-meta/config/known-domains.json",
+      "knowledge_tracks": "/Users/romansiepelmeyer/Documents/Claude Code/estate-mate/00-meta/config/knowledge-tracks.json",
+      "filter_folders": ["EstateMate", "Christof", "Ari"]
+    },
+    "calendar": {
+      "script": "/Users/romansiepelmeyer/Documents/Claude Code/estate-mate/00-meta/scripts/calendar_operations.py"
+    },
+    "thread_fetcher": {
+      "script": "/Users/romansiepelmeyer/Documents/Claude Code/estate-mate/00-meta/scripts/fetch-email-thread.py"
+    },
+    "identity": "roman@estatemate.io",
+    "google_project": "estate-mate"
+  }
+}
