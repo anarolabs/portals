@@ -1650,9 +1650,10 @@ def inspect_slide(project, pres_id, slide_ref):
 # Surgical editing helpers (tier 1)
 # =============================================================================
 
-def _replace_text(reqs, object_id, new_text):
+def _replace_text(reqs, object_id, new_text, has_text=True):
     """Clear existing text and insert new text in an element."""
-    reqs.append({"deleteText": {"objectId": object_id, "textRange": {"type": "ALL"}}})
+    if has_text:
+        reqs.append({"deleteText": {"objectId": object_id, "textRange": {"type": "ALL"}}})
     if new_text:
         reqs.append({"insertText": {"objectId": object_id, "text": new_text, "insertionIndex": 0}})
 
@@ -1704,7 +1705,12 @@ def patch_slide(project, pres_id, operations):
             continue
 
         if "update_text" in op:
-            _replace_text(reqs, oid, op["update_text"])
+            el = el_lookup.get(oid, {})
+            text_content = ""
+            for te in el.get("shape", {}).get("text", {}).get("textElements", []):
+                if "textRun" in te:
+                    text_content += te["textRun"].get("content", "")
+            _replace_text(reqs, oid, op["update_text"], has_text=bool(text_content.strip("\n")))
 
         if "style_text" in op:
             st = op["style_text"]
