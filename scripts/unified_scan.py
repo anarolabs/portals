@@ -559,6 +559,60 @@ def write_cache(cache_path, cache_data):
 
 
 # ---------------------------------------------------------------------------
+# Prometheus digest feedback handler
+# ---------------------------------------------------------------------------
+
+def _process_digest_feedback(gmail_data):
+    """Check Gmail results for replies to Prometheus digest emails.
+
+    Looks for emails with subject containing 'Prometheus daily digest' or
+    'Prometheus weekly learning' that are replies (not the original digest).
+    Logs feedback to Athena as kind='feedback' spans.
+    """
+    if not gmail_data:
+        return
+
+    athena_dir = str(Path(__file__).parent.parent.parent / "athena")
+    sys.path.insert(0, athena_dir)
+    try:
+        from spans import start_trace, end_span
+    except ImportError:
+        return
+
+    # Check notable emails for digest replies
+    notable = gmail_data.get("notable", [])
+    if not notable:
+        # Try AL format
+        for category in gmail_data.values():
+            if isinstance(category, dict):
+                for key, emails in category.items():
+                    if isinstance(emails, list):
+                        notable.extend(emails)
+
+    for email in notable:
+        if not isinstance(email, dict):
+            continue
+        subject = (email.get("subject") or "").lower()
+        sender = (email.get("from") or email.get("sender") or "").lower()
+
+        # Only process replies TO digest emails (from Roman, about Prometheus)
+        if "prometheus" in subject and ("daily digest" in subject or "weekly learning" in subject):
+            if "roman" in sender or "anarolabs" in sender:
+                body = email.get("snippet") or email.get("body") or ""
+                trace_id = start_trace(
+                    "feedback:digest-reply",
+                    kind="feedback",
+                    project="system",
+                    trigger="email",
+                )
+                end_span(trace_id, status="ok", metrics={
+                    "source": "email",
+                    "subject": subject[:100],
+                }, comment=body[:500])
+                print(f"  Logged digest feedback: {subject[:60]}", file=sys.stderr)
+
+
+# ---------------------------------------------------------------------------
 # Main scan orchestration
 # ---------------------------------------------------------------------------
 
@@ -694,6 +748,27 @@ def run_scan(project_name, config, force=False, skip_kg=False):
     with open(last_scan_path, "w") as f:
         f.write(str(now_ts))
 
+    # Check for Prometheus digest feedback (replies to daily/weekly reports)
+    _process_digest_feedback(scan_results.get("gmail"))
+
+    # Optional: KG config validation (pre-flight check)
+    if not skip_kg:
+        judge_script = Path(__file__).parent.parent.parent / "knowledge-graph" / "03-implementation" / "ingestion" / "kg_judge.py"
+        if judge_script.exists():
+            validate_cmd = ["uv", "run", "--with", "neo4j", "python3", str(judge_script), "--validate"]
+            validate_env = os.environ.copy()
+            validate_env["TRACE_ID"] = os.environ.get("TRACE_ID", "")
+            try:
+                vresult = subprocess.run(validate_cmd, capture_output=True, text=True, timeout=30, env=validate_env)
+                if vresult.returncode != 0:
+                    print(f"  [HALT] Config validation failed - skipping KG writes this cycle", file=sys.stderr)
+                    print(f"  {vresult.stdout[:300]}", file=sys.stderr)
+                    skip_kg = True  # Override to skip all KG operations
+                else:
+                    print(f"  Config validation passed", file=sys.stderr)
+            except Exception as e:
+                print(f"  Config validation error (proceeding): {e}", file=sys.stderr)
+
     # Optional: KG ingestion
     kg_duration = None
     if not skip_kg:
@@ -720,11 +795,14 @@ def run_scan(project_name, config, force=False, skip_kg=False):
             else:
                 cmd = ["uv", "run", "--with", "neo4j", "python3", str(kg_script), "--project", project_name, "--cache-file", cache_path]
 
+            kg_env = os.environ.copy()
+            kg_env["TRACE_ID"] = os.environ.get("TRACE_ID", "")
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
                 timeout=60,
+                env=kg_env,
             )
             kg_duration = round(time.time() - kg_start, 2)
             if result.returncode == 0:
@@ -745,6 +823,7 @@ def run_scan(project_name, config, force=False, skip_kg=False):
             # MD indexer uses neo4j_client.py which auto-detects transport
             md_env = os.environ.copy()
             md_env["TRACE_ID"] = os.environ.get("TRACE_ID", "")
+            md_env["KG_JUDGE_ENABLED"] = os.environ.get("KG_JUDGE_ENABLED", "0")
 
             if is_http:
                 md_cmd = ["python3", str(md_script)]
