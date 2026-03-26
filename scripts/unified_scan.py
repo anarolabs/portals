@@ -589,26 +589,32 @@ def run_scan(project_name, config, force=False, skip_kg=False):
     # Run 4 scanners in parallel
     scan_results = {}
     scan_errors = {}
+    scanner_durations = {}
     start_time = time.time()
 
     with ThreadPoolExecutor(max_workers=4) as executor:
+        scanner_start_times = {}
         futures = {
             executor.submit(scan_gmail, project_config, last_scan_ts): "gmail",
             executor.submit(scan_linear, project_config): "linear",
             executor.submit(scan_granola, project_config, last_scan_ts): "granola",
             executor.submit(scan_calendar, project_config): "calendar",
         }
+        for f in futures:
+            scanner_start_times[f] = time.time()
 
         for future in as_completed(futures):
             scanner_name = futures[future]
+            scanner_elapsed = time.time() - scanner_start_times[future]
             try:
                 section, data, err = future.result()
+                scanner_durations[section] = round(scanner_elapsed, 2)
                 if err:
                     scan_errors[section] = err
                     print(f"  ERROR [{section}]: {err}", file=sys.stderr)
                 elif data:
                     scan_results[section] = data
-                    print(f"  OK [{section}]", file=sys.stderr)
+                    print(f"  OK [{section}] ({scanner_elapsed:.1f}s)", file=sys.stderr)
                 else:
                     print(f"  EMPTY [{section}]", file=sys.stderr)
             except Exception as e:
@@ -689,22 +695,132 @@ def run_scan(project_name, config, force=False, skip_kg=False):
         f.write(str(now_ts))
 
     # Optional: KG ingestion
+    kg_duration = None
     if not skip_kg:
         kg_script = Path(__file__).parent.parent.parent / "knowledge-graph" / "03-implementation" / "ingestion" / "kg_ingest.py"
         if kg_script.exists():
+            neo4j_uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
+            is_http = neo4j_uri.startswith("http://") or neo4j_uri.startswith("https://")
+
+            # For local Bolt mode, ensure Neo4j Docker is running
+            if not is_http:
+                compose_file = Path(__file__).parent.parent.parent / "knowledge-graph" / "docker-compose.yml"
+                if compose_file.exists():
+                    subprocess.run(
+                        ["docker", "compose", "-f", str(compose_file), "up", "-d"],
+                        capture_output=True, timeout=30,
+                    )
+
             print(f"  Running KG ingestion...", file=sys.stderr)
+            kg_start = time.time()
+
+            # HTTP mode uses stdlib only (no neo4j package needed)
+            if is_http:
+                cmd = ["python3", str(kg_script), "--project", project_name, "--cache-file", cache_path]
+            else:
+                cmd = ["uv", "run", "--with", "neo4j", "python3", str(kg_script), "--project", project_name, "--cache-file", cache_path]
+
             result = subprocess.run(
-                ["python3", str(kg_script), "--project", project_name, "--cache-file", cache_path],
+                cmd,
                 capture_output=True,
                 text=True,
                 timeout=60,
             )
+            kg_duration = round(time.time() - kg_start, 2)
             if result.returncode == 0:
-                print(f"  KG ingestion complete", file=sys.stderr)
+                print(f"  KG ingestion complete ({kg_duration:.1f}s)", file=sys.stderr)
             else:
-                print(f"  KG ingestion failed: {result.stderr[:200]}", file=sys.stderr)
+                print(f"  KG ingestion failed: {result.stderr[:500]}", file=sys.stderr)
         else:
             pass  # KG not yet installed, skip silently
+
+    # Optional: Markdown indexing
+    md_duration = None
+    if not skip_kg:  # Reuse the same flag - if KG is enabled, indexing is too
+        md_script = Path(__file__).parent.parent.parent / "knowledge-graph" / "03-implementation" / "ingestion" / "md_indexer.py"
+        if md_script.exists():
+            print(f"  Running Markdown indexer...", file=sys.stderr)
+            md_start = time.time()
+
+            # MD indexer uses neo4j_client.py which auto-detects transport
+            md_env = os.environ.copy()
+            md_env["TRACE_ID"] = os.environ.get("TRACE_ID", "")
+
+            if is_http:
+                md_cmd = ["python3", str(md_script)]
+            else:
+                md_cmd = ["uv", "run", "--with", "neo4j", "python3", str(md_script)]
+
+            result = subprocess.run(
+                md_cmd,
+                capture_output=True,
+                text=True,
+                timeout=180,
+                env=md_env,
+            )
+            md_duration = round(time.time() - md_start, 2)
+            if result.returncode == 0:
+                print(f"  Markdown indexer complete ({md_duration:.1f}s)", file=sys.stderr)
+            else:
+                print(f"  Markdown indexer failed: {result.stderr[:500]}", file=sys.stderr)
+
+    # Record scan run in unified tracing (spans.db)
+    try:
+        cockpit_path = str(Path(__file__).parent.parent.parent / "athena")
+        sys.path.insert(0, cockpit_path)
+        from spans import start_trace, start_span, end_span
+
+        trace_id = os.environ.get("TRACE_ID")
+        trigger = "skill" if trace_id else ("launchd" if os.environ.get("LAUNCHED_BY_LAUNCHD") else "manual")
+
+        # Create root span if not part of a skill trace
+        if not trace_id:
+            trace_id = start_trace("scan:unified", kind="scan", project=project_name, trigger=trigger)
+
+        scan_span = start_span("scan:unified", kind="scan", parent=trace_id, project=project_name, trigger=trigger)
+
+        # Record individual scanner spans
+        for scanner_name, duration in scanner_durations.items():
+            s = start_span(f"scan:{scanner_name}", kind="scan", parent=scan_span, project=project_name)
+            scanner_metrics = {}
+            if scanner_name in scan_results:
+                data = scan_results[scanner_name]
+                if scanner_name == "gmail":
+                    scanner_metrics["emails"] = data.get("total_emails", 0)
+                elif scanner_name == "linear":
+                    scanner_metrics["changes"] = len(data.get("changes_since_last_scan", []))
+                elif scanner_name == "granola":
+                    meta = data.get("_meta", {})
+                    scanner_metrics["meetings"] = meta.get("total_meetings", 0)
+                elif scanner_name == "calendar":
+                    meta = data.get("_meta", {})
+                    scanner_metrics["events"] = meta.get("total_events", 0)
+            status = "error" if scanner_name in scan_errors else "ok"
+            error = scan_errors.get(scanner_name)
+            end_span(s, status=status, metrics=scanner_metrics, error=error)
+
+        # Record KG ingestion span
+        if kg_duration is not None:
+            kg_span = start_span("ingest:kg", kind="ingest", parent=scan_span, project=project_name)
+            end_span(kg_span, status="ok", metrics={"duration_s": kg_duration})
+
+        # End the scan span
+        scan_metrics = {
+            "scanners": len(scan_results),
+            "errors": len(scan_errors),
+            "elapsed_s": round(elapsed, 1),
+        }
+        for name, dur in scanner_durations.items():
+            scan_metrics[f"duration_{name}"] = dur
+        if kg_duration:
+            scan_metrics["duration_kg"] = kg_duration
+
+        end_span(scan_span, status="ok" if not scan_errors else "partial", metrics=scan_metrics)
+
+        # Set TRACE_ID for any downstream subprocesses
+        os.environ["TRACE_ID"] = trace_id
+    except Exception as e:
+        print(f"  Trace write skipped: {e}", file=sys.stderr)
 
     # Output summary as JSON to stdout
     summary = {
