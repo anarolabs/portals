@@ -267,22 +267,41 @@ def detect_linear_changes(new_data, old_data):
 
 
 def scan_granola(project_config, last_scan_ts):
-    """Run Granola scanner."""
+    """Run Granola scanner using the transcripts-only batch path.
+
+    Switched from extract-granola-notes.py to extract-granola-transcripts-batch.py
+    on 2026-04-08. Reasons:
+      1. Granola's AI-generated notes are unreliable - notes generation
+         silently fails for some recordings (the Apr 7 Ari call had no
+         notes despite a complete transcript). Notes-less meetings used
+         to disappear from the sync entirely.
+      2. Raw transcripts feed Opus-based extraction in Phase 4 sub-agents,
+         which produces materially better summaries than Granola's notes.
+      3. Roman wants a custom note format that Granola does not honor as
+         a default. Owning extraction in Opus removes that constraint.
+
+    The batch script:
+      - Uses a 28-day lookback window (survives long offline stretches)
+      - Filters by Granola's updated_at field (so meetings touched recently
+        are included even if their calendar invite was created earlier)
+      - Caches transcripts to ~/Documents/Claude Code/_granola-transcripts-cache/
+      - Returns transcript_path per meeting (not inline content) so the
+        cache stays lean
+      - Output shape is compatible with filter_granola_for_em() and with
+        kg_ingest.py's downstream consumption (verified)
+    """
     granola_cfg = project_config["granola"]
-    script = granola_cfg["script"]
+    batch_script = granola_cfg.get("batch_script") or granola_cfg["script"]
 
-    # Default to 30 days ago
-    if last_scan_ts is None:
-        last_scan_ts = int(time.time()) - (30 * 86400)
-
-    cmd = ["python3", script, str(last_scan_ts), "--include-content"]
-
-    # Add --include-folders for EM (needed for filtering)
     filter_folders = granola_cfg.get("filter_folders")
+    cmd = ["python3", batch_script, "--since", "28"]
     if filter_folders:
+        # EM needs folder data so the EM filter can route by Granola folder
         cmd.append("--include-folders")
 
-    data, err = run_script(cmd, timeout=45)
+    # Bumped from 45s -> 120s. Cold cache: fetching 30 transcripts can take
+    # 30-60s with the 100ms inter-call rate limit. Warm cache: under 5s.
+    data, err = run_script(cmd, timeout=120)
     if err:
         # Check for token expiry
         if err and "401" in str(err):
@@ -307,6 +326,8 @@ def filter_granola_for_em(data, folder_keywords, known_domains_path):
         try:
             with open(known_domains_path) as f:
                 kd = json.load(f)
+                # Walk dict-typed sections (e.g. stakeholders) for nested
+                # per-stakeholder domain lists
                 for section in kd.values():
                     if isinstance(section, dict):
                         for domains in section.values():
@@ -316,6 +337,12 @@ def filter_granola_for_em(data, folder_keywords, known_domains_path):
                                 for dl in domains.values():
                                     if isinstance(dl, list):
                                         em_domains.update(dl)
+                # Also include the org's own domain(s) so meetings on the
+                # team's primary work email (e.g. roman@estatemate.io,
+                # ari@estatemate.io) are recognized as EM-relevant.
+                org_domains = kd.get("org_domains", [])
+                if isinstance(org_domains, list):
+                    em_domains.update(org_domains)
         except (FileNotFoundError, json.JSONDecodeError):
             pass
 
@@ -719,8 +746,9 @@ def run_scan(project_name, config, force=False, skip_kg=False):
     merged_threads.update(new_threads)
     cache_data["deliverable_thread_bodies"] = merged_threads
 
-    # Preserve processed_meetings from existing cache
+    # Preserve processed trackers from existing cache
     cache_data["processed_meetings"] = existing_cache.get("processed_meetings", {})
+    cache_data["processed_emails"] = existing_cache.get("processed_emails", {})
 
     # Add scan results (use existing data as fallback for failed scanners)
     for section in ("gmail", "granola", "linear", "calendar"):
@@ -844,6 +872,8 @@ def run_scan(project_name, config, force=False, skip_kg=False):
                 print(f"  Markdown indexer failed: {result.stderr[:500]}", file=sys.stderr)
 
     # Record scan run in unified tracing (spans.db)
+    scan_span = None
+    scan_metrics = None
     try:
         cockpit_path = str(Path(__file__).parent.parent.parent / "athena")
         sys.path.insert(0, cockpit_path)
@@ -883,7 +913,7 @@ def run_scan(project_name, config, force=False, skip_kg=False):
             kg_span = start_span("ingest:kg", kind="ingest", parent=scan_span, project=project_name)
             end_span(kg_span, status="ok", metrics={"duration_s": kg_duration})
 
-        # End the scan span
+        # Build scan metrics (span ended later with raw_output attached)
         scan_metrics = {
             "scanners": len(scan_results),
             "errors": len(scan_errors),
@@ -893,8 +923,6 @@ def run_scan(project_name, config, force=False, skip_kg=False):
             scan_metrics[f"duration_{name}"] = dur
         if kg_duration:
             scan_metrics["duration_kg"] = kg_duration
-
-        end_span(scan_span, status="ok" if not scan_errors else "partial", metrics=scan_metrics)
 
         # Set TRACE_ID for any downstream subprocesses
         os.environ["TRACE_ID"] = trace_id
@@ -914,7 +942,18 @@ def run_scan(project_name, config, force=False, skip_kg=False):
         "linear_changes": len(scan_results.get("linear", {}).get("changes_since_last_scan", [])),
         "elapsed_seconds": round(elapsed, 1),
     }
-    print(json.dumps(summary, indent=2))
+    summary_json = json.dumps(summary, indent=2)
+
+    # Attach raw_output to the scan span (best-effort)
+    try:
+        if scan_span:
+            end_span(scan_span, status="ok" if not scan_errors else "partial",
+                     metrics=scan_metrics, raw_output=summary_json)
+            scan_span = None  # Mark as already ended
+    except Exception:
+        pass
+
+    print(summary_json)
 
 
 def main():

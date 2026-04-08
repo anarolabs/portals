@@ -382,7 +382,8 @@
           "pattern": "might_seem",
           "detect": "\"might\", \"seems\", or \"appears\" used more than twice per paragraph",
           "replace": "Make direct statements instead of hedging",
-          "severity": "flag",
+          "severity": "always",
+          "eval_rubric_test": "V02",
           "examples": [
             {
               "bad": "This might improve performance. It seems like the bottleneck appears to be in the database layer.",
@@ -394,7 +395,8 @@
           "pattern": "arguably",
           "detect": "\"arguably\", \"perhaps\", or \"potentially\"",
           "replace": "Commit to the claim or remove the hedge",
-          "severity": "flag",
+          "severity": "always",
+          "eval_rubric_test": "V02",
           "examples": [
             {
               "bad": "This is arguably the most important feature we shipped this quarter.",
@@ -449,6 +451,95 @@
             {
               "bad": "The system is highly performant. It delivers exceptional speed across all operations.",
               "good": "The system handles 10,000 requests per second with p99 latency under 50ms."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rhetorical_tells",
+      "name": "Rhetorical AI tells",
+      "note": "Added 2026-03-28. Maps to eval rubric anti-pattern blockers AP02-AP07, APW01.",
+      "patterns": [
+        {
+          "pattern": "performative_insight",
+          "detect": "\"Here's what no one tells you\", \"The real reason\", \"The truth about\", \"What nobody mentions\"",
+          "replace": "\"Here's how I think about it\" or \"One way to frame this\"",
+          "severity": "always",
+          "eval_rubric_test": "AP02",
+          "examples": [
+            {
+              "bad": "Here's what no one tells you about capacity planning.",
+              "good": "Here's how I think about capacity planning."
+            },
+            {
+              "bad": "The real reason most WFM implementations fail is...",
+              "good": "A pattern I've seen in WFM implementations that fail..."
+            }
+          ]
+        },
+        {
+          "pattern": "false_authority",
+          "detect": "\"Most leaders...\", \"Most companies...\", \"Most teams...\" without data or cited source",
+          "replace": "\"In the companies I've worked with...\" or \"A pattern I've seen...\"",
+          "severity": "always",
+          "eval_rubric_test": "AP03",
+          "examples": [
+            {
+              "bad": "Most leaders underestimate the change management effort.",
+              "good": "In the companies I've worked with, the change management effort is consistently underestimated."
+            }
+          ]
+        },
+        {
+          "pattern": "aggressive_urgency",
+          "detect": "\"You NEED to\", \"You'll be left behind\", \"This is your last chance\", \"If you don't act now\"",
+          "replace": "Ethical urgency: opportunity cost, real consequences. Never manufactured scarcity.",
+          "severity": "always",
+          "eval_rubric_test": "AP05",
+          "examples": [
+            {
+              "bad": "You need to adopt AI now or you'll be left behind.",
+              "good": "Every month without a capacity model, you're staffing on gut feel."
+            }
+          ]
+        },
+        {
+          "pattern": "hype_amplification",
+          "detect": "\"AI replacing whole teams\", \"Anyone can be a builder now\", \"AI will transform everything\"",
+          "replace": "State what AI actually does in specific contexts.",
+          "severity": "always",
+          "eval_rubric_test": "AP06",
+          "examples": [
+            {
+              "bad": "AI is replacing entire teams overnight.",
+              "good": "AI handles the scheduling calculations that used to take the WFM analyst 3 hours every Monday."
+            }
+          ]
+        },
+        {
+          "pattern": "manufactured_drama",
+          "detect": "\"Let that sink in\", \"Read that again\", \"I'll say that again\", excessive rhetorical questions used for effect rather than genuine inquiry",
+          "replace": "Trust the content. Trust the reader.",
+          "severity": "flag",
+          "eval_rubric_test": "APW01",
+          "examples": [
+            {
+              "bad": "700 tickets resolved. Let that sink in.",
+              "good": "700 tickets resolved."
+            }
+          ]
+        },
+        {
+          "pattern": "over_intellectualizing",
+          "detect": "Unnecessarily complex vocabulary or dense academic structures where simpler language would work. Long words when short ones do the job. This is Roman's insecurity tell - reaching for complexity to sound credible.",
+          "replace": "Flag it: \"This section feels like it's reaching for complexity.\" Suggest simpler alternative.",
+          "severity": "always",
+          "eval_rubric_test": "AP07",
+          "examples": [
+            {
+              "bad": "The paradigmatic shift in organizational cognition necessitates a recalibration of our methodological approach.",
+              "good": "Teams are starting to think differently. We need to adjust how we work."
             }
           ]
         }

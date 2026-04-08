@@ -57,6 +57,25 @@ else
   echo "---"
 fi
 
+# Step 2.5: Check for active comments
+COMMENT_JSON=$(bash "$PORTALS" scripts/docs_operations.py --check-comments "$DOC_ID" --active-only --project "$PROJECT" 2>/dev/null || echo '{"activeComments":0}')
+ACTIVE_COUNT=$(echo "$COMMENT_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('activeComments',0))" 2>/dev/null || echo "0")
+
+if [ "$ACTIVE_COUNT" -gt 0 ]; then
+  echo ""
+  echo "=== WARNING: $ACTIVE_COUNT ACTIVE COMMENT(S) ==="
+  echo "This document has unresolved comments. --update-md will destroy them."
+  echo "Consider using --patch or --insert-section instead."
+  echo ""
+
+  if [[ "$FORCE" != "--force" ]]; then
+    echo "To push anyway: re-run with --force"
+    exit 1
+  else
+    echo "Proceeding with --force (comments will be destroyed)."
+  fi
+fi
+
 # Step 3: Push
 echo "Pushing to Google Doc..."
 bash "$PORTALS" scripts/docs_operations.py --update-md "$DOC_ID" --file "$FILE" --project "$PROJECT"

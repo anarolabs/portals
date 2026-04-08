@@ -1,0 +1,195 @@
+{
+  "doc_id": "1qzXzNBzfvJS0voiuWk4Y2hEItkholl7TI9zfSs-whro",
+  "proposals": [
+    {
+      "id": "C-5",
+      "title": "Reframe severity from forecast-based to customer experience metrics",
+      "type": "replace",
+      "current_text": "5-10%",
+      "proposed_text": "per-channel customer experience thresholds (ASA for chat/phone, average queue time for email)",
+      "source_comment_ids": ["AAAB1YIYEWk"],
+      "target_section": "Section 2: Severity stages - progress overview",
+      "rationale": "Approved (R1). Severity scope and thresholds changed from forecast accuracy (5-10%) to customer experience metrics. Priority: 1) Chat (ASA), 2) Phone (ASA), 3) Email (avg time in non-handled queue)."
+    },
+    {
+      "id": "C-1",
+      "title": "Reframe severity: per-channel thresholds based on customer experience",
+      "type": "insert",
+      "insert_after": "2. Severity stages and escalation thresholds",
+      "proposed_text": "Severity is triggered per channel when customer experience metrics breach a threshold:\n- Chat and phone: average speed of answer (ASA) - time from queue entry to first agent response\n- Email: average time in non-handled queue\nPriority ranking for lever activation: 1) Chat, 2) Phone, 3) Email.\nWhen any channel breaches its threshold, severity moves from Normal to Elevated or Critical, triggering the corresponding levers. Not all levers help all channels - downstream sections clarify which levers apply where.",
+      "source_comment_ids": ["AAAB1YIYEWg"],
+      "target_section": "Section 2: Severity stages",
+      "rationale": "Rejected-and-revised (R1). Original proposal was email-first framing. Roman's correction: severity = per-channel customer experience metrics (ASA, queue time). Any channel breaching threshold triggers severity change. Need to clarify which levers help which channels."
+    },
+    {
+      "id": "C-4",
+      "title": "SLA thresholds: per-channel, email is health indicator",
+      "type": "replace",
+      "current_text": "Is an aggregate SLA across all channels sufficient, or do different channels need different escalation triggers?",
+      "proposed_text": "Decided: Per-channel thresholds. Each channel has its own metric (ASA for chat/phone, queue time for email). Email backlog is the overall health indicator but all channels are monitored independently.",
+      "source_comment_ids": ["AAAB1YizYYM"],
+      "target_section": "Section 2: Input questions",
+      "rationale": "Approved (R1). Updated to align with the per-channel customer experience metric framing."
+    },
+    {
+      "id": "C-2",
+      "title": "Move variance baseline to operational visibility section",
+      "type": "insert",
+      "insert_after": "4. Operational visibility",
+      "proposed_text": "Variance baseline: BPOs carry a contractual buffer of +/- 10% on contact forecast. This buffer is often consumed by absenteeism, so effective headroom may be lower. Dashboard should surface this gap.",
+      "source_comment_ids": ["AAAB1YIYEWs"],
+      "target_section": "Section 4: Operational visibility",
+      "rationale": "Rejected-and-moved (R1). Roman: this belongs in operational visibility as dashboard content, not in severity stages. The 10% buffer and absenteeism caveat should be visible on the dashboard."
+    },
+    {
+      "id": "C-3",
+      "title": "QAs/trainers: Critical only",
+      "type": "replace",
+      "current_text": "team leads, QAs, trainers, support staff take contacts",
+      "proposed_text": "team leads, QAs, trainers, support staff take contacts (Critical only)",
+      "source_comment_ids": ["AAAB1YIYEWw"],
+      "target_section": "Section 2: Severity stages - severity table",
+      "rationale": "Approved (R1). Roman: no need for Elevated nuance context. Just list the lever with its severity trigger."
+    },
+    {
+      "id": "OD-7",
+      "title": "OT ownership: WFM owns end-to-end (decided)",
+      "type": "replace",
+      "current_text": "OX coordinates if multiple sites involved",
+      "proposed_text": "WFM identifies need, collects from BPOs, and tracks OT production",
+      "source_comment_ids": ["AAAB1Ztn5G4"],
+      "target_section": "Section 2: Severity stages - Elevated row",
+      "rationale": "Decided (R1). WFM owns OT end-to-end: identifies need, collects info from BPOs, tracks production. Rationale: if WFM sees the need and OX collects, WFM still has to track - same workload. RACI must also be updated to reflect this."
+    },
+    {
+      "id": "C-10",
+      "title": "Remove language/channel attribution as lever",
+      "type": "replace",
+      "current_text": "Language/channel attribution to isolate the driver",
+      "proposed_text": "[Remove this lever row - attribution is visibility/reporting, not an operational lever]",
+      "source_comment_ids": ["AAAB1Ztn5HA"],
+      "target_section": "Section 2: Severity stages - lever list",
+      "rationale": "Rejected-and-simplified (R1). Roman: don't annotate what was moved. Just remove it as a lever. Attribution belongs in visibility/reporting."
+    },
+    {
+      "id": "C-12-appendix",
+      "title": "Add appendix: discussed but not included items",
+      "type": "insert",
+      "insert_after": "Channel prioritization",
+      "proposed_text": "Appendix: Items discussed but not included in current framework\n| Item | Discussion summary | Reason for exclusion |\n| Break rescheduling | Operationally complex, may lead to break accumulation | BPO-autonomous decision, not centrally directed |\n| [Additional items from rejected proposals to be added here] |",
+      "source_comment_ids": ["AAAB1Ztn5Hg"],
+      "target_section": "New section: Appendix",
+      "rationale": "New proposal (R1). Roman: for everything rejected, create an appendix table of items discussed but not included in the current framework."
+    },
+    {
+      "id": "OD-3",
+      "title": "Channel closure approval: remove Christiana, assign new approver",
+      "type": "replace",
+      "current_text": "Christiana approval",
+      "proposed_text": "Approval owner TBD (Patrycja: never needed Christiana. Options: Nils (Joe), Anna/Fede/Vincenzo (Roman))",
+      "source_comment_ids": ["AAAB1Ztn5Go"],
+      "target_section": "Section 2: Severity stages - Critical row",
+      "rationale": "Pending. Three-way discussion needed on approval owner for channel closure."
+    },
+    {
+      "id": "C-9",
+      "title": "Update IVR/banner to confirmed available",
+      "type": "replace",
+      "current_text": "Enable IVR/voice messaging to set customer expectations",
+      "proposed_text": "Activate app banner + IVR adjustments (confirmed available, previously used)",
+      "source_comment_ids": ["AAAB1Ztn5Gs"],
+      "target_section": "Section 2: Severity stages - severity table",
+      "rationale": "Pending. Patrycja confirmed banner was used before. Joe confirmed both are editable. Trigger ownership still open (Niels?)."
+    },
+    {
+      "id": "C-16",
+      "title": "Translation routing: update ownership and cost note",
+      "type": "replace",
+      "current_text": "WFM team activates",
+      "proposed_text": "WFM activates EN-EU; BPOs can initiate cross-EU (note: cross-EU translation less cost-effective)",
+      "source_comment_ids": ["AAAB1W5PYp0", "AAAB1Ztn5HE"],
+      "target_section": "Reference: lever inventory - translation routing row",
+      "rationale": "Pending. Joe says cross-EU can be initiated by BPOs themselves. Patrycja flagged cost-effectiveness concern."
+    },
+    {
+      "id": "OD-2",
+      "title": "Channel closure escalation: single owner needed",
+      "type": "replace",
+      "current_text": "Joint WFM + OX escalation",
+      "proposed_text": "Single owner TBD (Joe/Patrycja to align - currently joint WFM + OX but single owner expected)",
+      "source_comment_ids": ["AAAB1Ztn5HI"],
+      "target_section": "Reference: lever inventory - channel closure row",
+      "rationale": "Pending. Patrycja asked whether single owner expected. No alignment yet."
+    },
+    {
+      "id": "C-11",
+      "title": "Clarify 'Depends on BPO' availability",
+      "type": "replace",
+      "current_text": "Depends on BPO",
+      "proposed_text": "Yes (varies by site - not all BPOs have QAs, willingness differs)",
+      "source_comment_ids": ["AAAB1Ztn5HQ", "AAAB1Ztn5HM"],
+      "target_section": "Reference: lever inventory - QAs/trainers and offline activities rows",
+      "rationale": "Pending. Patrycja asked why 'Depends on BPO'. Clarify: some BPOs more willing, not all sites have QAs."
+    },
+    {
+      "id": "C-17",
+      "title": "IVR lever row: update availability",
+      "type": "replace",
+      "current_text": "Engineering, triggered by ? Care team",
+      "proposed_text": "Engineering (manual trigger, requires Engineering involvement)",
+      "source_comment_ids": ["AAAB1W5PYp8"],
+      "target_section": "Reference: lever inventory - IVR row",
+      "rationale": "Pending. Joe: 'Yes Manual - Requires Engineering'. Open: can WFM trigger directly or through P&A?"
+    },
+    {
+      "id": "C-14",
+      "title": "Post-contact work: add concrete examples",
+      "type": "replace",
+      "current_text": "Suspend non-essential post-contact work",
+      "proposed_text": "Suspend non-essential post-contact work (e.g. follow-up tickets, admin logging, feedback forms)",
+      "source_comment_ids": ["AAAB1Ztn5H0"],
+      "target_section": "Reference: lever inventory",
+      "rationale": "Pending. Patrycja asked 'like what?' - adding concrete examples."
+    },
+    {
+      "id": "C-18",
+      "title": "Callback offers: not currently available",
+      "type": "replace",
+      "current_text": "Callback offers to manage queue pressure | No",
+      "proposed_text": "Callback offers to manage queue pressure | No (not available from tooling perspective, future consideration)",
+      "source_comment_ids": ["AAAB1W5PYqE"],
+      "target_section": "Reference: lever inventory",
+      "rationale": "Pending. Joe: 'Can't do this now - would love to in future.'"
+    },
+    {
+      "id": "C-6",
+      "title": "Add missing levers: app banner, cross-team support",
+      "type": "insert",
+      "insert_after": "Callback offers to manage queue pressure",
+      "proposed_text": "App banner / contact form adjustment | Yes | Engineering, triggered by ? | Reduces inflow by deflecting contacts to self-service\nCross-team support (PET, SoMe, SX, L2, LEX, OX in-house) | Yes | WFM coordinates | Adds temporary capacity from non-primary teams",
+      "source_comment_ids": ["AAAB1W5PYok"],
+      "target_section": "Reference: complete lever inventory",
+      "rationale": "Pending. Joe confirmed app banner available. Patrycja added cross-team support options."
+    },
+    {
+      "id": "C-21",
+      "title": "SLA performance: update refresh rate to actual",
+      "type": "replace",
+      "current_text": "1-2 hour delay",
+      "proposed_text": "60-min promised (Explore module), 90-120 min actual",
+      "source_comment_ids": ["AAAB1W5PYrE"],
+      "target_section": "Section 4: Operational visibility - SLA row",
+      "rationale": "Pending. Actual refresh is 90-120 min despite 60-min promise."
+    },
+    {
+      "id": "C-22",
+      "title": "Occupancy: flag as available but flawed",
+      "type": "replace",
+      "current_text": "No live view",
+      "proposed_text": "Available (ZD WFM) but system has known data quality issues - flawed metrics",
+      "source_comment_ids": ["AAAB1W5PYrM"],
+      "target_section": "Section 4: Operational visibility - occupancy row",
+      "rationale": "Pending. Joe: available in ZD WFM but data is flawed. Vincenzo to share issue list."
+    }
+  ]
+}

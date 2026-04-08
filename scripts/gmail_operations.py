@@ -516,7 +516,7 @@ def _attach_file(message: MIMEMultipart, file_path: str):
 def create_draft(to: str, subject: str, body: str, cc: str = None,
                   thread_id: str = None, in_reply_to: str = None,
                   references: str = None, project: str = None,
-                  attach: str = None):
+                  attach: list = None):
     """Create email draft with YOUR formatting rules."""
     service = get_gmail_service(project=project)
 
@@ -529,7 +529,8 @@ def create_draft(to: str, subject: str, body: str, cc: str = None,
         alt_part = MIMEMultipart("alternative")
         alt_part.attach(MIMEText(html_body, "html"))
         message.attach(alt_part)
-        _attach_file(message, attach)
+        for file_path in attach:
+            _attach_file(message, file_path)
     else:
         message = MIMEMultipart("alternative")
         message.attach(MIMEText(html_body, "html"))
@@ -575,7 +576,7 @@ def create_draft(to: str, subject: str, body: str, cc: str = None,
 def send_email(to: str, subject: str, body: str, cc: str = None,
                thread_id: str = None, in_reply_to: str = None,
                references: str = None, project: str = None,
-               attach: str = None):
+               attach: list = None):
     """Send email with YOUR formatting rules."""
     service = get_gmail_service(project=project)
 
@@ -588,7 +589,8 @@ def send_email(to: str, subject: str, body: str, cc: str = None,
         alt_part = MIMEMultipart("alternative")
         alt_part.attach(MIMEText(html_body, "html"))
         message.attach(alt_part)
-        _attach_file(message, attach)
+        for file_path in attach:
+            _attach_file(message, file_path)
     else:
         message = MIMEMultipart("alternative")
         message.attach(MIMEText(html_body, "html"))
@@ -753,8 +755,8 @@ def main():
     parser.add_argument("--max", type=int, default=10, help="Max search results (default: 10)")
 
     # Attachment
-    parser.add_argument("--attach", metavar="FILE_PATH",
-                        help="Attach a file to draft or sent email")
+    parser.add_argument("--attach", metavar="FILE_PATH", action="append",
+                        help="Attach file(s) to draft or sent email (repeatable)")
 
     # Thread/reply arguments
     parser.add_argument("--reply-to", metavar="MESSAGE_ID",

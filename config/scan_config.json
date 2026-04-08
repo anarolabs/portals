@@ -13,6 +13,7 @@
     },
     "granola": {
       "script": "/Users/romansiepelmeyer/Documents/Claude Code/anaro-labs/00-meta/scripts/extract-granola-notes.py",
+      "batch_script": "/Users/romansiepelmeyer/Documents/Claude Code/anaro-labs/00-meta/scripts/extract-granola-transcripts-batch.py",
       "known_domains": "/Users/romansiepelmeyer/Documents/Claude Code/anaro-labs/00-meta/config/known-domains.json",
       "knowledge_tracks": "/Users/romansiepelmeyer/Documents/Claude Code/anaro-labs/00-meta/config/knowledge-tracks.json"
     },
@@ -39,6 +40,7 @@
     },
     "granola": {
       "script": "/Users/romansiepelmeyer/Documents/Claude Code/anaro-labs/00-meta/scripts/extract-granola-notes.py",
+      "batch_script": "/Users/romansiepelmeyer/Documents/Claude Code/anaro-labs/00-meta/scripts/extract-granola-transcripts-batch.py",
       "known_domains": "/Users/romansiepelmeyer/Documents/Claude Code/estate-mate/00-meta/config/known-domains.json",
       "knowledge_tracks": "/Users/romansiepelmeyer/Documents/Claude Code/estate-mate/00-meta/config/knowledge-tracks.json",
       "filter_folders": ["EstateMate", "Christof", "Ari"]

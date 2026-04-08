@@ -67,6 +67,21 @@ Usage:
 
     # Check comment anchors (read-only, shows positions and quoted content)
     python3 docs_operations.py --check-comments DOC_ID --project anaro-labs
+
+    # Check only unresolved comments
+    python3 docs_operations.py --check-comments DOC_ID --active-only
+
+    # Reply to a comment
+    python3 docs_operations.py --reply-comment DOC_ID --comment-id CID -m "Good point, updated."
+
+    # Resolve a single comment
+    python3 docs_operations.py --resolve-comment DOC_ID --comment-id CID -m "Done."
+
+    # Batch resolve multiple comments
+    python3 docs_operations.py --resolve-comment DOC_ID --comment-id CID1,CID2,CID3 -m "All addressed."
+
+    # Resolve all active comments
+    python3 docs_operations.py --resolve-comment DOC_ID --all-active -m "Batch resolved."
 """
 import argparse
 import json
@@ -859,37 +874,54 @@ def find_heading(doc_id: str, search_text: str, project: str = None):
         sys.exit(1)
 
 
-def check_comments(doc_id: str, project: str = None):
-    """Check comment anchors on a document (read-only).
+def _fetch_comments(doc_id: str, project: str = None):
+    """Fetch all comments from a document via Drive API.
 
-    Uses Drive API to fetch all comments with their anchor positions
-    and quotedFileContent. Useful for verifying comments survive edits.
+    Returns (drive_service, comments_list) where comments_list contains
+    raw comment objects from the API.
     """
     resolved_project = _resolve_project(project)
     drive_service = get_drive_service(project=resolved_project)
 
+    comments = []
+    page_token = None
+    while True:
+        resp = drive_service.comments().list(
+            fileId=doc_id,
+            fields="comments(id,content,author/displayName,quotedFileContent,anchor,resolved,createdTime,modifiedTime,replies(content,author/displayName,createdTime)),nextPageToken",
+            includeDeleted=False,
+            pageToken=page_token,
+        ).execute()
+        comments.extend(resp.get("comments", []))
+        page_token = resp.get("nextPageToken")
+        if not page_token:
+            break
+
+    return drive_service, comments, resolved_project
+
+
+def check_comments(doc_id: str, project: str = None, active_only: bool = False):
+    """Check comment anchors on a document (read-only).
+
+    Uses Drive API to fetch all comments with their anchor positions
+    and quotedFileContent. Useful for verifying comments survive edits.
+
+    If active_only=True, only unresolved comments are included in output.
+    """
     try:
-        comments = []
-        page_token = None
-        while True:
-            resp = drive_service.comments().list(
-                fileId=doc_id,
-                fields="comments(id,content,author/displayName,quotedFileContent,anchor,resolved,createdTime,modifiedTime,replies(content,author/displayName,createdTime)),nextPageToken",
-                includeDeleted=False,
-                pageToken=page_token,
-            ).execute()
-            comments.extend(resp.get("comments", []))
-            page_token = resp.get("nextPageToken")
-            if not page_token:
-                break
+        _, comments, resolved_project = _fetch_comments(doc_id, project)
 
         results = []
         for c in comments:
+            is_resolved = c.get("resolved", False)
+            if active_only and is_resolved:
+                continue
+
             entry = {
                 "id": c.get("id"),
                 "author": c.get("author", {}).get("displayName", ""),
                 "content": c.get("content", ""),
-                "resolved": c.get("resolved", False),
+                "resolved": is_resolved,
                 "createdTime": c.get("createdTime", ""),
             }
             quoted = c.get("quotedFileContent")
@@ -922,6 +954,106 @@ def check_comments(doc_id: str, project: str = None):
             "comments": results,
             "project": resolved_project,
         }, indent=2))
+
+    except Exception as e:
+        print(json.dumps({"error": str(e)}), file=sys.stderr)
+        sys.exit(1)
+
+
+def reply_to_comment(doc_id: str, comment_id: str, message: str, project: str = None):
+    """Post a reply to an existing comment on a Google Doc.
+
+    Uses Drive API replies().create to add a reply without resolving.
+    """
+    resolved_project = _resolve_project(project)
+    drive_service = get_drive_service(project=resolved_project)
+
+    try:
+        reply = drive_service.replies().create(
+            fileId=doc_id,
+            commentId=comment_id,
+            fields="id,content,author/displayName,createdTime",
+            body={"content": message},
+        ).execute()
+
+        print(json.dumps({
+            "status": "replied",
+            "document_id": doc_id,
+            "comment_id": comment_id,
+            "reply_id": reply.get("id"),
+            "content": reply.get("content"),
+            "author": reply.get("author", {}).get("displayName", ""),
+            "createdTime": reply.get("createdTime", ""),
+            "project": resolved_project,
+        }, indent=2))
+
+    except Exception as e:
+        print(json.dumps({"error": str(e), "comment_id": comment_id}), file=sys.stderr)
+        sys.exit(1)
+
+
+def resolve_comment(doc_id: str, comment_ids: list, message: str, project: str = None, all_active: bool = False):
+    """Resolve one or more comments on a Google Doc.
+
+    Uses Drive API replies().create with action='resolve' to mark comments
+    as resolved. Loops through the list and reports successes + errors.
+
+    If all_active=True, fetches all unresolved comments and resolves them.
+    """
+    resolved_project = _resolve_project(project)
+    drive_service = get_drive_service(project=resolved_project)
+
+    try:
+        # If --all-active, fetch all unresolved comment IDs
+        if all_active:
+            _, comments, _ = _fetch_comments(doc_id, project)
+            comment_ids = [
+                c.get("id") for c in comments
+                if not c.get("resolved", False)
+            ]
+            if not comment_ids:
+                print(json.dumps({
+                    "status": "no_active_comments",
+                    "document_id": doc_id,
+                    "message": "No unresolved comments found.",
+                    "project": resolved_project,
+                }, indent=2))
+                return
+
+        successes = []
+        errors = []
+
+        for cid in comment_ids:
+            try:
+                reply = drive_service.replies().create(
+                    fileId=doc_id,
+                    commentId=cid,
+                    fields="id,content,author/displayName,createdTime",
+                    body={"action": "resolve", "content": message},
+                ).execute()
+                successes.append({
+                    "comment_id": cid,
+                    "reply_id": reply.get("id"),
+                })
+            except Exception as e:
+                errors.append({
+                    "comment_id": cid,
+                    "error": str(e),
+                })
+
+        print(json.dumps({
+            "status": "resolved",
+            "document_id": doc_id,
+            "resolved_count": len(successes),
+            "error_count": len(errors),
+            "successes": successes,
+            "errors": errors,
+            "message": message,
+            "project": resolved_project,
+        }, indent=2))
+
+        if errors:
+            sys.exit(1)
 
     except Exception as e:
         print(json.dumps({"error": str(e)}), file=sys.stderr)
@@ -1177,21 +1309,44 @@ def insert_table(doc_id: str, after_heading: str, table_file: str, heading_text:
             # Can't insert at document endIndex itself
             insert_at = min(insert_at, doc_end - 1)
 
-        # Step 2: Build batch 1 - insert separator/heading + table structure
+        # Step 2: Build batch 1 - insert buffer + separator/heading + table structure
+        #
+        # Buffer paragraph: insert a NORMAL_TEXT paragraph before the table to break
+        # style inheritance. Without this, table cells inherit the heading's text
+        # style (font size, bold, background color) from the paragraph at the
+        # insertion point. The buffer is cleaned up in Step 6.
+        #
         # Key: do NOT add trailing \n after heading text. insertTable auto-inserts
         # a \n before the table which terminates the heading paragraph. Adding our
         # own trailing \n would create an empty paragraph between heading and table.
         # Order: insertText -> insertTable -> updateParagraphStyle (heading paragraph
         # must be terminated by insertTable's auto-\n before we can style it safely).
         batch1 = []
+
+        # Insert buffer paragraph to break style inheritance chain
+        batch1.append({"insertText": {"location": {"index": insert_at}, "text": "\n"}})
+        batch1.append({
+            "updateParagraphStyle": {
+                "range": {"startIndex": insert_at, "endIndex": insert_at + 1},
+                "paragraphStyle": {
+                    "namedStyleType": "NORMAL_TEXT",
+                    "spaceAbove": {"magnitude": 0, "unit": "PT"},
+                    "spaceBelow": {"magnitude": 0, "unit": "PT"},
+                },
+                "fields": "namedStyleType,spaceAbove,spaceBelow",
+            }
+        })
+        # All subsequent indices shift by 1 (the buffer \n)
+        insert_at_buffered = insert_at + 1
+
         if heading_text:
             pre_text = "\n" + heading_text
-            h_start = insert_at + 1
+            h_start = insert_at_buffered + 1
             h_end = h_start + len(heading_text) + 1  # +1 for insertTable auto-\n
-            batch1.append({"insertText": {"location": {"index": insert_at}, "text": pre_text}})
-            table_location = insert_at + len(pre_text)
+            batch1.append({"insertText": {"location": {"index": insert_at_buffered}, "text": pre_text}})
+            table_location = insert_at_buffered + len(pre_text)
         else:
-            table_location = insert_at
+            table_location = insert_at_buffered
 
         batch1.append({
             "insertTable": {
@@ -1326,21 +1481,6 @@ def insert_table(doc_id: str, after_heading: str, table_file: str, heading_text:
             }
         })
 
-        # Bold + dark charcoal text for header row
-        for c in range(num_cols):
-            fp = filled.get((0, c))
-            if fp and fp["start"] is not None and fp["len"] > 0:
-                batch2.append({
-                    "updateTextStyle": {
-                        "range": {"startIndex": fp["start"], "endIndex": fp["start"] + fp["len"]},
-                        "textStyle": {
-                            "bold": True,
-                            "foregroundColor": {"color": _make_rgb(TABLE_BORDER_COLOR)},
-                        },
-                        "fields": "bold,foregroundColor",
-                    }
-                })
-
         # Paragraph style for all cells: NORMAL_TEXT, tight spacing
         adjusted_end = table_end + total_text
         batch2.append({
@@ -1356,14 +1496,30 @@ def insert_table(doc_id: str, after_heading: str, table_file: str, heading_text:
             }
         })
 
-        # Clear font size (use document default)
+        # Clear ALL inherited text styles (font size, bold, background, foreground)
+        # Must come BEFORE header-specific styling so the header re-apply wins
         batch2.append({
             "updateTextStyle": {
                 "range": {"startIndex": table_start + 1, "endIndex": adjusted_end - 1},
                 "textStyle": {},
-                "fields": "fontSize",
+                "fields": "fontSize,backgroundColor,bold,foregroundColor",
             }
         })
+
+        # Bold + dark charcoal text for header row (re-applied after global reset)
+        for c in range(num_cols):
+            fp = filled.get((0, c))
+            if fp and fp["start"] is not None and fp["len"] > 0:
+                batch2.append({
+                    "updateTextStyle": {
+                        "range": {"startIndex": fp["start"], "endIndex": fp["start"] + fp["len"]},
+                        "textStyle": {
+                            "bold": True,
+                            "foregroundColor": {"color": _make_rgb(TABLE_BORDER_COLOR)},
+                        },
+                        "fields": "bold,foregroundColor",
+                    }
+                })
 
         # Checklist column
         if checklist_col is not None:
@@ -1390,6 +1546,39 @@ def insert_table(doc_id: str, after_heading: str, table_file: str, heading_text:
             docs_service.documents().batchUpdate(
                 documentId=doc_id, body={"requests": _heading_style_reqs}
             ).execute()
+
+        # Step 6: Clean up buffer paragraph inserted in Step 2.
+        # Re-fetch doc to find the empty paragraph before the table and delete it.
+        doc = docs_service.documents().get(documentId=doc_id).execute()
+        body = doc.get("body", {}).get("content", [])
+        for i, elem in enumerate(body):
+            if "table" in elem:
+                t_start = elem.get("startIndex", 0)
+                # Match our table (indices shifted by text insertions, use tolerance)
+                if abs(t_start - (table_start + 1)) < 500:
+                    # Look at paragraph immediately before the table
+                    if i > 0 and "paragraph" in body[i - 1]:
+                        prev = body[i - 1]
+                        prev_text = "".join(
+                            e.get("textRun", {}).get("content", "")
+                            for e in prev.get("paragraph", {}).get("elements", [])
+                        ).strip()
+                        if prev_text == "":  # empty buffer paragraph
+                            try:
+                                docs_service.documents().batchUpdate(
+                                    documentId=doc_id,
+                                    body={"requests": [{
+                                        "deleteContentRange": {
+                                            "range": {
+                                                "startIndex": prev["startIndex"],
+                                                "endIndex": prev["endIndex"] - 1,
+                                            }
+                                        }
+                                    }]}
+                                ).execute()
+                            except Exception:
+                                pass  # buffer cleanup is best-effort
+                    break
 
         print(json.dumps({
             "success": True,
@@ -1874,6 +2063,8 @@ def main():
     group.add_argument("--find-text", metavar="DOC_ID", help="Find exact text and return character index ranges (requires --text)")
     group.add_argument("--find-heading", metavar="DOC_ID", help="Find heading by name and return section boundaries (requires --text)")
     group.add_argument("--check-comments", metavar="DOC_ID", help="List all comment anchors with quoted content (read-only)")
+    group.add_argument("--reply-comment", metavar="DOC_ID", help="Reply to a comment (requires --comment-id and -m)")
+    group.add_argument("--resolve-comment", metavar="DOC_ID", help="Resolve comment(s) (requires --comment-id or --all-active, and -m)")
 
     # Options
     parser.add_argument("--title", help="Document title")
@@ -1889,6 +2080,10 @@ def main():
     parser.add_argument("--after-heading", help="Target heading for --insert-table and --insert-section")
     parser.add_argument("--heading", help="Optional heading text to insert before table")
     parser.add_argument("--output", help="Output file path for --export-pdf")
+    parser.add_argument("--comment-id", help="Comment ID (single or comma-separated for batch)")
+    parser.add_argument("--message", "-m", help="Reply or resolve message text")
+    parser.add_argument("--active-only", action="store_true", help="Filter --check-comments to unresolved only")
+    parser.add_argument("--all-active", action="store_true", help="Resolve all unresolved comments (with --resolve-comment)")
 
     args = parser.parse_args()
 
@@ -1973,7 +2168,22 @@ def main():
         find_heading(args.find_heading, args.text, args.project)
 
     elif args.check_comments:
-        check_comments(args.check_comments, args.project)
+        check_comments(args.check_comments, args.project, active_only=args.active_only)
+
+    elif args.reply_comment:
+        if not args.comment_id:
+            parser.error("--reply-comment requires --comment-id")
+        if not args.message:
+            parser.error("--reply-comment requires --message / -m")
+        reply_to_comment(args.reply_comment, args.comment_id, args.message, args.project)
+
+    elif args.resolve_comment:
+        if not args.message:
+            parser.error("--resolve-comment requires --message / -m")
+        if not args.comment_id and not args.all_active:
+            parser.error("--resolve-comment requires --comment-id or --all-active")
+        comment_ids = args.comment_id.split(",") if args.comment_id else []
+        resolve_comment(args.resolve_comment, comment_ids, args.message, args.project, all_active=args.all_active)
 
 
 if __name__ == "__main__":
