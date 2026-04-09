@@ -279,7 +279,31 @@ def cmd_full(args: argparse.Namespace) -> int:
         "stdout_tail": scan_result.get("stdout_tail", "")[:500],
     }
 
-    # Step 3: write the sentinel queue for downstream members
+    # Step 3: Cartographer Phase E (incremental embedding)
+    # This is the deterministic, cron-friendly KG-touching step. The full
+    # destructive rebuild requires a Claude Code session (the Steward in
+    # interactive mode). Phase E alone is safe to run on every cycle: it
+    # only updates the vector index for nodes whose text_hash drifted, and
+    # prunes rows for nodes that vanished from Neo4j.
+    embed_span = _start_span(name="agent:cartographer:embed-incremental", parent=trace_id, project=project)
+    embed_result = run_cartographer_embed()
+    _end_span(
+        embed_span,
+        status="ok" if embed_result.get("ok") else "partial",
+        metrics={
+            "member": "cartographer",
+            "phase": "E",
+            "nodes_embedded": embed_result.get("nodes_embedded", 0),
+            "stale_deleted": embed_result.get("stale_deleted", 0),
+            "tokens": embed_result.get("tokens", 0),
+            "cost_usd": embed_result.get("cost_usd", 0.0),
+            "duration_ms": embed_result.get("duration_ms", 0),
+        },
+        raw_output=json.dumps(embed_result, default=str)[:2000],
+        comment=embed_result.get("error") if not embed_result.get("ok") else None,
+    )
+
+    # Step 4: write the sentinel queue for downstream members
     queue_span = _start_span(name="agent:sentinel:queue", parent=trace_id, project=project)
     queue_path = write_queue(project=project, scan_summary=scan_summary, trace_id=trace_id)
     _end_span(
@@ -288,29 +312,90 @@ def cmd_full(args: argparse.Namespace) -> int:
         metrics={"member": "sentinel", "queue_path": str(queue_path)},
     )
 
-    # Close the root trace. Note: the rest of the household members
-    # (Scribe, Author, Foreman, Cartographer, Librarian, Custodian, Herald)
-    # are NOT spawned by this Python script. They are spawned by the
-    # Steward subagent in a Claude Code session that reads the queue.
+    # Close the root trace. The rest of the household members
+    # (Scribe, Author, Foreman, Librarian, Custodian, Herald) are NOT
+    # spawned by this Python script. They are spawned by the Steward
+    # subagent in a Claude Code session that reads the queue.
+    # Cartographer is partially handled here (Phase E), full rebuild on
+    # demand via `cartographer.py rebuild --apply`.
     _end_span(
         trace_id,
         status="partial",
         metrics={
-            "members_invoked": 1,
+            "members_invoked": 2,
             "queue_written": True,
-            "downstream_members_pending": 7,
+            "downstream_members_pending": 6,
+            "phase_e_ran": True,
         },
-        comment="Sentinel scan and queue complete. Downstream members are spawned by the Steward subagent in a Claude Code session.",
+        comment="Sentinel scan + Cartographer Phase E + queue written. Downstream Scribe→Author→Foreman→Librarian→Custodian→Herald are spawned by the Steward subagent.",
     )
 
     print(json.dumps({
         "status": "ok",
         "trace_id": trace_id,
         "scan": scan_result.get("returncode"),
+        "phase_e": {
+            "ok": embed_result.get("ok"),
+            "nodes_embedded": embed_result.get("nodes_embedded", 0),
+            "cost_usd": embed_result.get("cost_usd", 0.0),
+        },
         "queue_path": str(queue_path),
-        "next": "Steward subagent (or manual Claude Code session) reads the queue",
+        "next": "Steward subagent (or manual Claude Code session) reads the queue for the LLM-driven members",
     }, indent=2))
     return 0
+
+
+def run_cartographer_embed() -> dict[str, Any]:
+    """Invoke `cartographer.py embed` and return its JSON result.
+
+    Phase E is the cron-friendly, idempotent vector index update. It reads
+    the active variant from `04-retrieval/embeddings/config.yaml`, fetches
+    embeddable nodes from Neo4j, diffs against the existing index by
+    text_hash, embeds only the deltas. Failure here is logged but does NOT
+    fail the sentinel cycle — embedding will catch up next cycle.
+    """
+    cart_path = (
+        Path("/Users/romansiepelmeyer/Documents/Claude Code") /
+        "knowledge-graph" / "03-ingestion" / "cartographer.py"
+    )
+    if not cart_path.exists():
+        return {"ok": False, "error": f"cartographer.py not found at {cart_path}"}
+
+    cmd = [
+        "uv", "run",
+        "--with", "neo4j",
+        "--with", "sqlite-vec",
+        "--with", "voyageai",
+        "--with", "numpy",
+        "--with", "pyyaml",
+        "python3", str(cart_path), "embed",
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "cartographer embed timed out after 600s"}
+    except FileNotFoundError as exc:
+        return {"ok": False, "error": f"uv not found: {exc}"}
+
+    # Parse the JSON tail of stdout (the embed CLI prints progress lines
+    # then a final JSON summary at the end)
+    stdout = proc.stdout or ""
+    json_start = stdout.rfind("{")
+    if json_start == -1:
+        return {
+            "ok": proc.returncode == 0,
+            "error": f"no JSON in cartographer embed output (rc={proc.returncode})",
+            "stderr_tail": (proc.stderr or "")[-500:],
+        }
+    try:
+        result = json.loads(stdout[json_start:])
+        return result
+    except json.JSONDecodeError as exc:
+        return {
+            "ok": False,
+            "error": f"json decode failed: {exc}",
+            "stdout_tail": stdout[-500:],
+        }
 
 
 def cmd_scan_only(args: argparse.Namespace) -> int:

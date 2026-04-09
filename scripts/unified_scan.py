@@ -779,97 +779,28 @@ def run_scan(project_name, config, force=False, skip_kg=False):
     # Check for Prometheus digest feedback (replies to daily/weekly reports)
     _process_digest_feedback(scan_results.get("gmail"))
 
-    # Optional: KG config validation (pre-flight check)
-    if not skip_kg:
-        judge_script = Path(__file__).parent.parent.parent / "knowledge-graph" / "03-implementation" / "ingestion" / "kg_judge.py"
-        if judge_script.exists():
-            validate_cmd = ["uv", "run", "--with", "neo4j", "python3", str(judge_script), "--validate"]
-            validate_env = os.environ.copy()
-            validate_env["TRACE_ID"] = os.environ.get("TRACE_ID", "")
-            try:
-                vresult = subprocess.run(validate_cmd, capture_output=True, text=True, timeout=30, env=validate_env)
-                if vresult.returncode != 0:
-                    print(f"  [HALT] Config validation failed - skipping KG writes this cycle", file=sys.stderr)
-                    print(f"  {vresult.stdout[:300]}", file=sys.stderr)
-                    skip_kg = True  # Override to skip all KG operations
-                else:
-                    print(f"  Config validation passed", file=sys.stderr)
-            except Exception as e:
-                print(f"  Config validation error (proceeding): {e}", file=sys.stderr)
-
-    # Optional: KG ingestion
+    # ------------------------------------------------------------------
+    # KG ingestion REMOVED on 2026-04-09 (Path B sentinel rename).
+    #
+    # Historically this block called kg_judge.py --validate, kg_ingest.py,
+    # and md_indexer.py to write directly to Neo4j. All three are sunset
+    # as of the 2026-04-09 KG migration session. The Cartographer is now
+    # the only writer to Neo4j; it rebuilds the graph from markdown + git
+    # + registries (not from this scan cache) and runs Phase E embedding
+    # updates as part of the same cycle. See
+    # `knowledge-graph/03-ingestion/cartographer/rebuild.py`.
+    #
+    # The scan cache itself is still produced and consumed downstream by
+    # the Scribe (read transcripts → extract statements → hand off to
+    # Author who patches markdown). The Cartographer reads the patched
+    # markdown, NOT this cache.
+    #
+    # This file (`unified_scan.py`) is the source-scanning library used
+    # by `sentinel.py` as a subprocess. The `--skip-kg` flag is now
+    # implicit: there is nothing to skip.
+    # ------------------------------------------------------------------
     kg_duration = None
-    if not skip_kg:
-        kg_script = Path(__file__).parent.parent.parent / "knowledge-graph" / "03-implementation" / "ingestion" / "kg_ingest.py"
-        if kg_script.exists():
-            neo4j_uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
-            is_http = neo4j_uri.startswith("http://") or neo4j_uri.startswith("https://")
-
-            # For local Bolt mode, ensure Neo4j Docker is running
-            if not is_http:
-                compose_file = Path(__file__).parent.parent.parent / "knowledge-graph" / "docker-compose.yml"
-                if compose_file.exists():
-                    subprocess.run(
-                        ["docker", "compose", "-f", str(compose_file), "up", "-d"],
-                        capture_output=True, timeout=30,
-                    )
-
-            print(f"  Running KG ingestion...", file=sys.stderr)
-            kg_start = time.time()
-
-            # HTTP mode uses stdlib only (no neo4j package needed)
-            if is_http:
-                cmd = ["python3", str(kg_script), "--project", project_name, "--cache-file", cache_path]
-            else:
-                cmd = ["uv", "run", "--with", "neo4j", "python3", str(kg_script), "--project", project_name, "--cache-file", cache_path]
-
-            kg_env = os.environ.copy()
-            kg_env["TRACE_ID"] = os.environ.get("TRACE_ID", "")
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=60,
-                env=kg_env,
-            )
-            kg_duration = round(time.time() - kg_start, 2)
-            if result.returncode == 0:
-                print(f"  KG ingestion complete ({kg_duration:.1f}s)", file=sys.stderr)
-            else:
-                print(f"  KG ingestion failed: {result.stderr[:500]}", file=sys.stderr)
-        else:
-            pass  # KG not yet installed, skip silently
-
-    # Optional: Markdown indexing
     md_duration = None
-    if not skip_kg:  # Reuse the same flag - if KG is enabled, indexing is too
-        md_script = Path(__file__).parent.parent.parent / "knowledge-graph" / "03-implementation" / "ingestion" / "md_indexer.py"
-        if md_script.exists():
-            print(f"  Running Markdown indexer...", file=sys.stderr)
-            md_start = time.time()
-
-            # MD indexer uses neo4j_client.py which auto-detects transport
-            md_env = os.environ.copy()
-            md_env["TRACE_ID"] = os.environ.get("TRACE_ID", "")
-            md_env["KG_JUDGE_ENABLED"] = os.environ.get("KG_JUDGE_ENABLED", "0")
-
-            if is_http:
-                md_cmd = ["python3", str(md_script)]
-            else:
-                md_cmd = ["uv", "run", "--with", "neo4j", "python3", str(md_script)]
-
-            result = subprocess.run(
-                md_cmd,
-                capture_output=True,
-                text=True,
-                timeout=180,
-                env=md_env,
-            )
-            md_duration = round(time.time() - md_start, 2)
-            if result.returncode == 0:
-                print(f"  Markdown indexer complete ({md_duration:.1f}s)", file=sys.stderr)
-            else:
-                print(f"  Markdown indexer failed: {result.stderr[:500]}", file=sys.stderr)
 
     # Record scan run in unified tracing (spans.db)
     scan_span = None
