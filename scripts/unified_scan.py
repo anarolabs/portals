@@ -427,6 +427,39 @@ def scan_calendar(project_config):
     return "calendar", data, None
 
 
+def scan_clerk_sources(project_config):
+    """Scan Gmail labels for attachments and Drive links (Clerk intake).
+
+    Calls gmail_attachment_scanner.py as a subprocess. Returns the scanner
+    output under section name "clerk". Skips silently if clerk is not
+    enabled in scan_config.json for this project.
+    """
+    clerk_cfg = project_config.get("clerk")
+    if not clerk_cfg or not clerk_cfg.get("enabled"):
+        return "clerk", None, None
+
+    scanner_path = str(
+        Path(__file__).resolve().parents[1].parent
+        / "knowledge-graph" / "03-ingestion" / "clerk" / "tools"
+        / "gmail_attachment_scanner.py"
+    )
+    google_project = project_config.get("google_project", "anaro-labs")
+    labels = ",".join(clerk_cfg.get("gmail_labels", []))
+
+    cmd = [
+        "python3", scanner_path,
+        "--project", google_project,
+        "--labels", labels,
+        "--lookback-days", str(clerk_cfg.get("lookback_days", 2)),
+        "--max-per-cycle", str(clerk_cfg.get("max_per_cycle", 5)),
+    ]
+
+    data, err = run_script(cmd, timeout=30)
+    if err:
+        return "clerk", None, err
+    return "clerk", data, None
+
+
 # ---------------------------------------------------------------------------
 # Deliverable thread matching
 # ---------------------------------------------------------------------------
@@ -667,19 +700,20 @@ def run_scan(project_name, config, force=False, skip_kg=False):
 
     print(f"  Last scan: {last_scan_ts or 'never'}", file=sys.stderr)
 
-    # Run 4 scanners in parallel
+    # Run scanners in parallel
     scan_results = {}
     scan_errors = {}
     scanner_durations = {}
     start_time = time.time()
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=5) as executor:
         scanner_start_times = {}
         futures = {
             executor.submit(scan_gmail, project_config, last_scan_ts): "gmail",
             executor.submit(scan_linear, project_config): "linear",
             executor.submit(scan_granola, project_config, last_scan_ts): "granola",
             executor.submit(scan_calendar, project_config): "calendar",
+            executor.submit(scan_clerk_sources, project_config): "clerk",
         }
         for f in futures:
             scanner_start_times[f] = time.time()
@@ -757,6 +791,18 @@ def run_scan(project_name, config, force=False, skip_kg=False):
         elif section in existing_cache:
             cache_data[section] = existing_cache[section]
             print(f"  Using cached data for [{section}] (scanner failed)", file=sys.stderr)
+
+    # Clerk results: flatten into top-level gmail_attachments and gmail_drive_links
+    if "clerk" in scan_results and scan_results["clerk"]:
+        clerk_data = scan_results["clerk"]
+        cache_data["gmail_attachments"] = clerk_data.get("gmail_attachments", [])
+        cache_data["gmail_drive_links"] = clerk_data.get("gmail_drive_links", [])
+        cache_data["clerk_scan_meta"] = clerk_data.get("scan_meta", {})
+    elif "gmail_attachments" in existing_cache:
+        # Preserve from last cycle if clerk scanner failed this time
+        cache_data["gmail_attachments"] = existing_cache.get("gmail_attachments", [])
+        cache_data["gmail_drive_links"] = existing_cache.get("gmail_drive_links", [])
+        cache_data["clerk_scan_meta"] = existing_cache.get("clerk_scan_meta", {})
 
     # Record scan errors in cache for skill visibility
     if scan_errors:
