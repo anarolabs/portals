@@ -201,6 +201,46 @@ def run_drive_refresh(*, project: str) -> dict[str, Any]:
         return {"ok": proc.returncode == 0, "stdout_tail": stdout[-500:] if stdout else ""}
 
 
+def run_cartographer_drive_sync() -> dict[str, Any]:
+    """Invoke `cartographer.py drive-sync` to MERGE Drive docs into Neo4j.
+
+    Incremental, cron-safe. Uses MERGE (not DETACH DELETE) so existing
+    graph content is preserved. Failure is non-fatal.
+    """
+    cart_path = (
+        Path("/Users/romansiepelmeyer/Documents/Claude Code") /
+        "knowledge-graph" / "03-ingestion" / "cartographer.py"
+    )
+    if not cart_path.exists():
+        return {"ok": False, "error": f"cartographer.py not found at {cart_path}"}
+
+    cmd = [
+        "uv", "run",
+        "--with", "neo4j",
+        "python3", str(cart_path), "drive-sync",
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "cartographer drive-sync timed out after 120s"}
+    except FileNotFoundError as exc:
+        return {"ok": False, "error": f"uv not found: {exc}"}
+
+    stdout = proc.stdout or ""
+    json_start = stdout.rfind("{")
+    if json_start == -1:
+        return {
+            "ok": proc.returncode == 0,
+            "error": f"no JSON in drive-sync output (rc={proc.returncode})",
+            "stderr_tail": (proc.stderr or "")[-500:],
+        }
+    try:
+        result = json.loads(stdout[json_start:])
+        return result
+    except json.JSONDecodeError:
+        return {"ok": proc.returncode == 0, "stdout_tail": stdout[-500:]}
+
+
 def read_scan_cache() -> dict[str, Any]:
     """Read .scan-cache.json if it exists."""
     if not SCAN_CACHE.exists():
@@ -348,7 +388,24 @@ def cmd_full(args: argparse.Namespace) -> int:
         comment=refresh_result.get("error") if not refresh_result.get("ok") else None,
     )
 
-    # Step 2: read cache and build scan summary
+    # Step 2: Cartographer incremental Drive sync (MERGE, not DETACH DELETE)
+    # Pushes Document nodes + ABOUT edges from drive-index.db into Neo4j.
+    # Non-fatal: if Neo4j is down, the next cycle (or a full rebuild) catches up.
+    drive_sync_span = _start_span(name="agent:cartographer:drive-sync", parent=trace_id, project=project)
+    drive_sync_result = run_cartographer_drive_sync()
+    _end_span(
+        drive_sync_span,
+        status="ok" if drive_sync_result.get("ok") else "error",
+        metrics={
+            "member": "cartographer",
+            "docs_synced": drive_sync_result.get("docs_synced", 0),
+            "edges_synced": drive_sync_result.get("edges_synced", 0),
+        },
+        raw_output=json.dumps(drive_sync_result, default=str)[:2000],
+        comment=drive_sync_result.get("error") if not drive_sync_result.get("ok") else None,
+    )
+
+    # Step 3: read cache and build scan summary
     cache = read_scan_cache()
     scan_summary = {
         "cache_keys": list(cache.keys())[:20],
@@ -357,7 +414,7 @@ def cmd_full(args: argparse.Namespace) -> int:
         "stdout_tail": scan_result.get("stdout_tail", "")[:500],
     }
 
-    # Step 3: Cartographer Phase E (incremental embedding)
+    # Step 4: Cartographer Phase E (incremental embedding)
     # This is the deterministic, cron-friendly KG-touching step. The full
     # destructive rebuild requires a Claude Code session (the Steward in
     # interactive mode). Phase E alone is safe to run on every cycle: it
@@ -381,7 +438,7 @@ def cmd_full(args: argparse.Namespace) -> int:
         comment=embed_result.get("error") if not embed_result.get("ok") else None,
     )
 
-    # Step 4: write the sentinel queue for downstream members
+    # Step 5: write the sentinel queue for downstream members
     queue_span = _start_span(name="agent:sentinel:queue", parent=trace_id, project=project)
     queue_path = write_queue(project=project, scan_summary=scan_summary, trace_id=trace_id)
     _end_span(
@@ -406,8 +463,10 @@ def cmd_full(args: argparse.Namespace) -> int:
             "phase_e_ran": True,
             "drive_crawl_ok": crawl_result.get("ok", False),
             "drive_refresh_ok": refresh_result.get("ok", False),
+            "drive_sync_ok": drive_sync_result.get("ok", False),
+            "drive_sync_docs": drive_sync_result.get("docs_synced", 0),
         },
-        comment="Sentinel scan + Drive crawl/refresh + Cartographer Phase E + queue written. Downstream Clerk→Scribe→Author→Foreman→Librarian→Custodian→Herald are spawned by the Steward subagent.",
+        comment="Sentinel scan + Drive crawl/refresh + Drive→KG sync + Cartographer Phase E + queue written. Downstream Clerk→Scribe→Author→Foreman→Librarian→Custodian→Herald are spawned by the Steward subagent.",
     )
 
     print(json.dumps({
@@ -422,6 +481,11 @@ def cmd_full(args: argparse.Namespace) -> int:
         "drive_refresh": {
             "ok": refresh_result.get("ok"),
             "files_updated": refresh_result.get("files_updated", 0),
+        },
+        "drive_sync": {
+            "ok": drive_sync_result.get("ok"),
+            "docs_synced": drive_sync_result.get("docs_synced", 0),
+            "edges_synced": drive_sync_result.get("edges_synced", 0),
         },
         "phase_e": {
             "ok": embed_result.get("ok"),
