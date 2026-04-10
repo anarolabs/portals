@@ -27,17 +27,13 @@
     "google_project": "anaro-labs",
     "clerk": {
       "enabled": true,
-      "gmail_labels": ["Clients/GYG", "Clients/Playtomic"],
+      "gmail_labels": ["Clients/GYG"],
       "lookback_days": 2,
       "max_per_cycle": 5,
       "label_project_map": {
         "Clients/GYG": {
           "project_slug": "gyg-g-c",
           "output_dir": "anaro-labs/01-clients/getyourguide/01-discovery/sources/"
-        },
-        "Clients/Playtomic": {
-          "project_slug": "playtomic",
-          "output_dir": "anaro-labs/01-clients/playtomic/01-discovery/sources/"
         }
       }
     }
