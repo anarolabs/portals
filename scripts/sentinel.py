@@ -134,7 +134,7 @@ def run_unified_scan(*, project: str, force: bool = False, skip_kg: bool = True)
     if not UNIFIED_SCAN.exists():
         return {"ok": False, "error": f"unified_scan.py not found at {UNIFIED_SCAN}"}
 
-    args = ["python3", str(UNIFIED_SCAN), "--project", project]
+    args = [sys.executable, str(UNIFIED_SCAN), "--project", project]
     if force:
         args.append("--force")
     if skip_kg:
@@ -161,7 +161,7 @@ def run_drive_crawl(*, project: str) -> dict[str, Any]:
     if not drive_index.exists():
         return {"ok": False, "error": f"drive_index.py not found at {drive_index}"}
 
-    cmd = ["python3", str(drive_index), "crawl", "--project", project]
+    cmd = [sys.executable, str(drive_index), "crawl", "--project", project]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
     except subprocess.TimeoutExpired:
@@ -184,7 +184,7 @@ def run_drive_refresh(*, project: str) -> dict[str, Any]:
     if not drive_index.exists():
         return {"ok": False, "error": f"drive_index.py not found at {drive_index}"}
 
-    cmd = ["python3", str(drive_index), "refresh", "--project", project]
+    cmd = [sys.executable, str(drive_index), "refresh", "--project", project]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
     except subprocess.TimeoutExpired:

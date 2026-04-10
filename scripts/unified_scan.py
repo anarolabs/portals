@@ -101,7 +101,7 @@ def scan_gmail(project_config, last_scan_ts):
     if last_scan_ts is None:
         last_scan_ts = int(time.time()) - (30 * 86400)
 
-    cmd = ["python3", script, str(last_scan_ts)]
+    cmd = [sys.executable, script, str(last_scan_ts)]
 
     data, err = run_script(cmd, timeout=30)
     if err:
@@ -143,7 +143,7 @@ def scan_gmail(project_config, last_scan_ts):
 def scan_linear_al(project_config):
     """Run AL Linear scanner (query-linear-issues.py - returns pre-categorized)."""
     script = project_config["linear"]["script"]
-    cmd = ["python3", script]
+    cmd = [sys.executable, script]
     data, err = run_script(cmd, timeout=30)
     if err:
         return "linear", None, err
@@ -153,7 +153,7 @@ def scan_linear_al(project_config):
 def scan_linear_em(project_config):
     """Run EM Linear scanner (linear_operations.py --list)."""
     script = project_config["linear"]["script"]
-    cmd = ["python3", script, "--list", "--limit", "50"]
+    cmd = [sys.executable, script, "--list", "--limit", "50"]
     data, err = run_script(cmd, timeout=30)
     if err:
         return "linear", None, err
@@ -294,7 +294,7 @@ def scan_granola(project_config, last_scan_ts):
     batch_script = granola_cfg.get("batch_script") or granola_cfg["script"]
 
     filter_folders = granola_cfg.get("filter_folders")
-    cmd = ["python3", batch_script, "--since", "28"]
+    cmd = [sys.executable, batch_script, "--since", "28"]
     if filter_folders:
         # EM needs folder data so the EM filter can route by Granola folder
         cmd.append("--include-folders")
@@ -402,7 +402,7 @@ def filter_granola_for_em(data, folder_keywords, known_domains_path):
 def scan_calendar(project_config):
     """Run Calendar scanner."""
     script = project_config["calendar"]["script"]
-    cmd = ["python3", script, "--upcoming", "7"]
+    cmd = [sys.executable, script, "--upcoming", "7"]
     data, err = run_script(cmd, timeout=15)
     if err:
         return "calendar", None, err
@@ -447,7 +447,7 @@ def scan_clerk_sources(project_config):
     labels = ",".join(clerk_cfg.get("gmail_labels", []))
 
     cmd = [
-        "python3", scanner_path,
+        sys.executable, scanner_path,
         "--project", google_project,
         "--labels", labels,
         "--lookback-days", str(clerk_cfg.get("lookback_days", 2)),
@@ -579,7 +579,7 @@ def fetch_thread_bodies(matches, project_config):
     results = {}
     for match in matches:
         thread_id = match["thread_id"]
-        cmd = ["python3", fetcher_script, "--thread", thread_id]
+        cmd = [sys.executable, fetcher_script, "--thread", thread_id]
 
         data, err = run_script(cmd, timeout=15)
         if err:
