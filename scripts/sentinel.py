@@ -155,6 +155,52 @@ def run_unified_scan(*, project: str, force: bool = False, skip_kg: bool = True)
     }
 
 
+def run_drive_crawl(*, project: str) -> dict[str, Any]:
+    """Invoke drive_index.py crawl to discover new files and folders."""
+    drive_index = Path(__file__).resolve().parent / "drive_index.py"
+    if not drive_index.exists():
+        return {"ok": False, "error": f"drive_index.py not found at {drive_index}"}
+
+    cmd = ["python3", str(drive_index), "crawl", "--project", project]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "drive crawl timed out after 120s"}
+    except FileNotFoundError as exc:
+        return {"ok": False, "error": f"python3 not found: {exc}"}
+
+    stdout = proc.stdout or ""
+    try:
+        result = json.loads(stdout)
+        result["ok"] = proc.returncode == 0
+        return result
+    except json.JSONDecodeError:
+        return {"ok": proc.returncode == 0, "stdout_tail": stdout[-500:] if stdout else ""}
+
+
+def run_drive_refresh(*, project: str) -> dict[str, Any]:
+    """Invoke drive_index.py refresh to update metadata for indexed files."""
+    drive_index = Path(__file__).resolve().parent / "drive_index.py"
+    if not drive_index.exists():
+        return {"ok": False, "error": f"drive_index.py not found at {drive_index}"}
+
+    cmd = ["python3", str(drive_index), "refresh", "--project", project]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "drive refresh timed out after 120s"}
+    except FileNotFoundError as exc:
+        return {"ok": False, "error": f"python3 not found: {exc}"}
+
+    stdout = proc.stdout or ""
+    try:
+        result = json.loads(stdout)
+        result["ok"] = proc.returncode == 0
+        return result
+    except json.JSONDecodeError:
+        return {"ok": proc.returncode == 0, "stdout_tail": stdout[-500:] if stdout else ""}
+
+
 def read_scan_cache() -> dict[str, Any]:
     """Read .scan-cache.json if it exists."""
     if not SCAN_CACHE.exists():
@@ -271,6 +317,37 @@ def cmd_full(args: argparse.Namespace) -> int:
         print(json.dumps({"status": "scan_failed", "result": scan_result}, indent=2))
         return 1
 
+    # Step 1.5: Drive index crawl + refresh
+    # Crawl discovers new files/folders, refresh updates metadata for existing.
+    # Both are I/O-bound, deterministic, no LLM. Failure is non-fatal — log
+    # the error span and continue so the rest of the cycle isn't blocked.
+    crawl_span = _start_span(name="agent:sentinel:drive-crawl", parent=trace_id, project=project)
+    crawl_result = run_drive_crawl(project=project)
+    _end_span(
+        crawl_span,
+        status="ok" if crawl_result.get("ok") else "error",
+        metrics={
+            "member": "sentinel",
+            "files_discovered": crawl_result.get("files_discovered", 0),
+            "files_updated": crawl_result.get("files_updated", 0),
+        },
+        raw_output=json.dumps(crawl_result, default=str)[:2000],
+        comment=crawl_result.get("error") if not crawl_result.get("ok") else None,
+    )
+
+    refresh_span = _start_span(name="agent:sentinel:drive-refresh", parent=trace_id, project=project)
+    refresh_result = run_drive_refresh(project=project)
+    _end_span(
+        refresh_span,
+        status="ok" if refresh_result.get("ok") else "error",
+        metrics={
+            "member": "sentinel",
+            "files_updated": refresh_result.get("files_updated", 0),
+        },
+        raw_output=json.dumps(refresh_result, default=str)[:2000],
+        comment=refresh_result.get("error") if not refresh_result.get("ok") else None,
+    )
+
     # Step 2: read cache and build scan summary
     cache = read_scan_cache()
     scan_summary = {
@@ -327,14 +404,25 @@ def cmd_full(args: argparse.Namespace) -> int:
             "queue_written": True,
             "downstream_members_pending": 7,
             "phase_e_ran": True,
+            "drive_crawl_ok": crawl_result.get("ok", False),
+            "drive_refresh_ok": refresh_result.get("ok", False),
         },
-        comment="Sentinel scan + Cartographer Phase E + queue written. Downstream Clerk→Scribe→Author→Foreman→Librarian→Custodian→Herald are spawned by the Steward subagent.",
+        comment="Sentinel scan + Drive crawl/refresh + Cartographer Phase E + queue written. Downstream Clerk→Scribe→Author→Foreman→Librarian→Custodian→Herald are spawned by the Steward subagent.",
     )
 
     print(json.dumps({
         "status": "ok",
         "trace_id": trace_id,
         "scan": scan_result.get("returncode"),
+        "drive_crawl": {
+            "ok": crawl_result.get("ok"),
+            "files_discovered": crawl_result.get("files_discovered", 0),
+            "files_updated": crawl_result.get("files_updated", 0),
+        },
+        "drive_refresh": {
+            "ok": refresh_result.get("ok"),
+            "files_updated": refresh_result.get("files_updated", 0),
+        },
         "phase_e": {
             "ok": embed_result.get("ok"),
             "nodes_embedded": embed_result.get("nodes_embedded", 0),
