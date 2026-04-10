@@ -23,11 +23,10 @@ mkdir -p "$CACHE_DIR"
 LAST_PUSH_FILE="$CACHE_DIR/${DOC_ID}.txt"
 CURRENT_FILE="$CACHE_DIR/${DOC_ID}.current.txt"
 
-DRIVE_OPS="/Users/romansiepelmeyer/Documents/Claude Code/anaro-labs/00-meta/scripts/drive_operations.py"
 PORTALS="/Users/romansiepelmeyer/Documents/Claude Code/portals/run.sh"
 
 # Step 1: Read current Google Doc
-python3 "$DRIVE_OPS" --read "$DOC_ID" 2>/dev/null \
+bash "$PORTALS" scripts/docs_operations.py --read "$DOC_ID" --project "$PROJECT" 2>/dev/null \
   | python3 -c "import sys,json; print(json.load(sys.stdin).get('content',''))" \
   > "$CURRENT_FILE"
 
@@ -81,7 +80,7 @@ echo "Pushing to Google Doc..."
 bash "$PORTALS" scripts/docs_operations.py --update-md "$DOC_ID" --file "$FILE" --project "$PROJECT"
 
 # Step 4: Cache the new state for future diffs
-python3 "$DRIVE_OPS" --read "$DOC_ID" 2>/dev/null \
+bash "$PORTALS" scripts/docs_operations.py --read "$DOC_ID" --project "$PROJECT" 2>/dev/null \
   | python3 -c "import sys,json; print(json.load(sys.stdin).get('content',''))" \
   > "$LAST_PUSH_FILE"
 
