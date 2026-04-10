@@ -3,8 +3,8 @@
 
 The Sentinel is the entry point of every household cycle. It runs the
 periodic scan of Gmail, Granola, Calendar, and Drive sources, then
-orchestrates the rest of the household members in sequence: Scribe →
-Author → Foreman → Librarian → Cartographer → Custodian → Herald.
+orchestrates the rest of the household members in sequence: Clerk →
+Scribe → Author → Foreman → Librarian → Cartographer → Custodian → Herald.
 
 USAGE
 -----
@@ -207,13 +207,14 @@ def write_queue(*, project: str, scan_summary: dict[str, Any], trace_id: str | N
         "",
         "When the Steward subagent (or a Claude Code session) reads this file, it should:",
         "",
-        "1. Spawn the **Scribe** subagent to extract structured statements from the new sources listed above",
-        "2. Pass Scribe output to the **Author** subagent for CONTEXT.md patching and decision file creation",
-        "3. Pass commitment statements to the **Foreman** subagent for Linear sync",
-        "4. Run the **Librarian** to classify any new files",
-        "5. Run the **Cartographer** to rebuild the KG from updated markdown + git + Linear",
-        "6. Run the **Custodian** to validate skills and references",
-        "7. Run the **Herald** to write the daily digest and update needs-review.md",
+        "1. If new Gmail attachments were found, spawn the **Clerk** subagent to download, convert, and file them as role:source markdowns",
+        "2. Spawn the **Scribe** subagent to extract structured statements from all sources (including Clerk output)",
+        "3. Pass Scribe output to the **Author** subagent for CONTEXT.md patching and decision file creation",
+        "4. Pass commitment statements to the **Foreman** subagent for Linear sync",
+        "5. Run the **Librarian** to classify any new files",
+        "6. Run the **Cartographer** to rebuild the KG from updated markdown + git + Linear",
+        "7. Run the **Custodian** to validate skills and references",
+        "8. Run the **Herald** to write the daily digest and update needs-review.md",
         "",
         "## Why this is a queue, not a direct invocation",
         "",
@@ -324,10 +325,10 @@ def cmd_full(args: argparse.Namespace) -> int:
         metrics={
             "members_invoked": 2,
             "queue_written": True,
-            "downstream_members_pending": 6,
+            "downstream_members_pending": 7,
             "phase_e_ran": True,
         },
-        comment="Sentinel scan + Cartographer Phase E + queue written. Downstream Scribe→Author→Foreman→Librarian→Custodian→Herald are spawned by the Steward subagent.",
+        comment="Sentinel scan + Cartographer Phase E + queue written. Downstream Clerk→Scribe→Author→Foreman→Librarian→Custodian→Herald are spawned by the Steward subagent.",
     )
 
     print(json.dumps({
