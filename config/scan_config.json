@@ -24,7 +24,23 @@
       "script": "/Users/romansiepelmeyer/Documents/Claude Code/anaro-labs/00-meta/scripts/fetch-email-thread.py"
     },
     "identity": "roman@anarolabs.com",
-    "google_project": "anaro-labs"
+    "google_project": "anaro-labs",
+    "clerk": {
+      "enabled": true,
+      "gmail_labels": ["Clients/GYG", "Clients/Playtomic"],
+      "lookback_days": 2,
+      "max_per_cycle": 5,
+      "label_project_map": {
+        "Clients/GYG": {
+          "project_slug": "gyg-g-c",
+          "output_dir": "anaro-labs/01-clients/getyourguide/01-discovery/sources/"
+        },
+        "Clients/Playtomic": {
+          "project_slug": "playtomic",
+          "output_dir": "anaro-labs/01-clients/playtomic/01-discovery/sources/"
+        }
+      }
+    }
   },
   "estate-mate": {
     "cache_path": "/Users/romansiepelmeyer/Documents/Claude Code/estate-mate/.scan-cache.json",
@@ -52,6 +68,9 @@
       "script": "/Users/romansiepelmeyer/Documents/Claude Code/estate-mate/00-meta/scripts/fetch-email-thread.py"
     },
     "identity": "roman@estatemate.io",
-    "google_project": "estate-mate"
+    "google_project": "estate-mate",
+    "clerk": {
+      "enabled": false
+    }
   }
 }
