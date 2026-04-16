@@ -89,7 +89,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from google_client import get_docs_service, get_drive_service, _resolve_project, PROJECT_CONFIG
+from google_client import get_docs_service, get_drive_service, get_impersonate_user, _resolve_project, PROJECT_CONFIG
 
 
 # =============================================================================
@@ -2039,6 +2039,119 @@ def export_pdf_doc(doc_id: str, output_path: str = None, project: str = None):
         sys.exit(1)
 
 
+# =============================================================================
+# Sharing and permissions
+# =============================================================================
+
+def share_file(file_id: str, email: str, role: str = "reader", project: str = None):
+    """Share a Google Drive file with a specific email address.
+
+    Uses delegated credentials so the share originates from the impersonated user.
+    Roles: reader, writer, commenter.
+    """
+    resolved_project = _resolve_project(project)
+    drive_service = get_drive_service(project=resolved_project)
+    owner = get_impersonate_user(project=resolved_project)
+
+    try:
+        permission = drive_service.permissions().create(
+            fileId=file_id,
+            body={"type": "user", "role": role, "emailAddress": email},
+            sendNotificationEmail=True,
+            fields="id,emailAddress,role",
+        ).execute()
+
+        print(json.dumps({
+            "success": True,
+            "file_id": file_id,
+            "shared_with": permission.get("emailAddress", email),
+            "role": permission.get("role", role),
+            "permission_id": permission.get("id"),
+            "shared_by": owner,
+            "project": resolved_project,
+        }, indent=2))
+
+    except Exception as e:
+        print(json.dumps({"error": str(e), "file_id": file_id, "email": email}), file=sys.stderr)
+        sys.exit(1)
+
+
+def list_permissions(file_id: str, project: str = None):
+    """List all permissions on a Google Drive file."""
+    resolved_project = _resolve_project(project)
+    drive_service = get_drive_service(project=resolved_project)
+
+    try:
+        result = drive_service.permissions().list(
+            fileId=file_id,
+            fields="permissions(id,emailAddress,role,type,displayName)",
+        ).execute()
+
+        perms = result.get("permissions", [])
+        print(json.dumps({
+            "file_id": file_id,
+            "permission_count": len(perms),
+            "permissions": perms,
+            "project": resolved_project,
+        }, indent=2))
+
+    except Exception as e:
+        print(json.dumps({"error": str(e), "file_id": file_id}), file=sys.stderr)
+        sys.exit(1)
+
+
+def remove_permission(file_id: str, permission_id: str, project: str = None):
+    """Remove a permission from a Google Drive file."""
+    resolved_project = _resolve_project(project)
+    drive_service = get_drive_service(project=resolved_project)
+
+    try:
+        drive_service.permissions().delete(
+            fileId=file_id,
+            permissionId=permission_id,
+        ).execute()
+
+        print(json.dumps({
+            "success": True,
+            "file_id": file_id,
+            "removed_permission_id": permission_id,
+            "project": resolved_project,
+        }, indent=2))
+
+    except Exception as e:
+        print(json.dumps({"error": str(e), "file_id": file_id}), file=sys.stderr)
+        sys.exit(1)
+
+
+def transfer_ownership(file_id: str, email: str, project: str = None):
+    """Transfer ownership of a Google Drive file to another user.
+
+    The target must be in the same Google Workspace domain.
+    """
+    resolved_project = _resolve_project(project)
+    drive_service = get_drive_service(project=resolved_project)
+
+    try:
+        permission = drive_service.permissions().create(
+            fileId=file_id,
+            body={"type": "user", "role": "owner", "emailAddress": email},
+            transferOwnership=True,
+            fields="id,emailAddress,role",
+        ).execute()
+
+        print(json.dumps({
+            "success": True,
+            "file_id": file_id,
+            "new_owner": permission.get("emailAddress", email),
+            "permission_id": permission.get("id"),
+            "project": resolved_project,
+        }, indent=2))
+
+    except Exception as e:
+        print(json.dumps({"error": str(e), "file_id": file_id, "email": email}), file=sys.stderr)
+        sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Unified Google Docs operations (multi-project)")
 
@@ -2065,6 +2178,10 @@ def main():
     group.add_argument("--check-comments", metavar="DOC_ID", help="List all comment anchors with quoted content (read-only)")
     group.add_argument("--reply-comment", metavar="DOC_ID", help="Reply to a comment (requires --comment-id and -m)")
     group.add_argument("--resolve-comment", metavar="DOC_ID", help="Resolve comment(s) (requires --comment-id or --all-active, and -m)")
+    group.add_argument("--share", metavar="FILE_ID", help="Share file with an email (requires --email, optional --role)")
+    group.add_argument("--list-permissions", metavar="FILE_ID", help="List all permissions on a file")
+    group.add_argument("--remove-permission", metavar="FILE_ID", help="Remove a permission (requires --permission-id)")
+    group.add_argument("--transfer-ownership", metavar="FILE_ID", help="Transfer file ownership (requires --email)")
 
     # Options
     parser.add_argument("--title", help="Document title")
@@ -2084,6 +2201,9 @@ def main():
     parser.add_argument("--message", "-m", help="Reply or resolve message text")
     parser.add_argument("--active-only", action="store_true", help="Filter --check-comments to unresolved only")
     parser.add_argument("--all-active", action="store_true", help="Resolve all unresolved comments (with --resolve-comment)")
+    parser.add_argument("--email", help="Email address for --share or --transfer-ownership")
+    parser.add_argument("--role", default="reader", choices=["reader", "writer", "commenter"], help="Permission role for --share (default: reader)")
+    parser.add_argument("--permission-id", help="Permission ID for --remove-permission")
 
     args = parser.parse_args()
 
@@ -2184,6 +2304,24 @@ def main():
             parser.error("--resolve-comment requires --comment-id or --all-active")
         comment_ids = args.comment_id.split(",") if args.comment_id else []
         resolve_comment(args.resolve_comment, comment_ids, args.message, args.project, all_active=args.all_active)
+
+    elif args.share:
+        if not args.email:
+            parser.error("--share requires --email")
+        share_file(args.share, args.email, args.role, args.project)
+
+    elif args.list_permissions:
+        list_permissions(args.list_permissions, args.project)
+
+    elif args.remove_permission:
+        if not args.permission_id:
+            parser.error("--remove-permission requires --permission-id")
+        remove_permission(args.remove_permission, args.permission_id, args.project)
+
+    elif args.transfer_ownership:
+        if not args.email:
+            parser.error("--transfer-ownership requires --email")
+        transfer_ownership(args.transfer_ownership, args.email, args.project)
 
 
 if __name__ == "__main__":
