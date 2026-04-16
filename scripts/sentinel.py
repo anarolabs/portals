@@ -334,11 +334,15 @@ def write_queue(*, project: str, scan_summary: dict[str, Any], trace_id: str | N
 
 def cmd_full(args: argparse.Namespace) -> int:
     project = args.project
+    # "all" runs unified_scan with --project all (handles both projects internally)
+    # but we still need to iterate drive crawl/refresh per project
+    scan_project = project  # passed to unified_scan as-is ("all" is supported)
+    drive_projects = ["anaro-labs", "estate-mate"] if project == "all" else [project]
     trace_id = _start_trace(name="prometheus:cycle", project=project, trigger="cron")
 
     # Step 1: Sentinel scan
     scan_span = _start_span(name="agent:sentinel:scan", parent=trace_id, project=project)
-    scan_result = run_unified_scan(project=project, force=args.force, skip_kg=args.skip_kg)
+    scan_result = run_unified_scan(project=scan_project, force=args.force, skip_kg=args.skip_kg)
     _end_span(
         scan_span,
         status="ok" if scan_result.get("ok") else "error",
@@ -357,36 +361,37 @@ def cmd_full(args: argparse.Namespace) -> int:
         print(json.dumps({"status": "scan_failed", "result": scan_result}, indent=2))
         return 1
 
-    # Step 1.5: Drive index crawl + refresh
+    # Step 1.5: Drive index crawl + refresh (per project)
     # Crawl discovers new files/folders, refresh updates metadata for existing.
     # Both are I/O-bound, deterministic, no LLM. Failure is non-fatal — log
     # the error span and continue so the rest of the cycle isn't blocked.
-    crawl_span = _start_span(name="agent:sentinel:drive-crawl", parent=trace_id, project=project)
-    crawl_result = run_drive_crawl(project=project)
-    _end_span(
-        crawl_span,
-        status="ok" if crawl_result.get("ok") else "error",
-        metrics={
-            "member": "sentinel",
-            "files_discovered": crawl_result.get("files_discovered", 0),
-            "files_updated": crawl_result.get("files_updated", 0),
-        },
-        raw_output=json.dumps(crawl_result, default=str)[:2000],
-        comment=crawl_result.get("error") if not crawl_result.get("ok") else None,
-    )
+    for dp in drive_projects:
+        crawl_span = _start_span(name=f"agent:sentinel:drive-crawl:{dp}", parent=trace_id, project=dp)
+        crawl_result = run_drive_crawl(project=dp)
+        _end_span(
+            crawl_span,
+            status="ok" if crawl_result.get("ok") else "error",
+            metrics={
+                "member": "sentinel",
+                "files_discovered": crawl_result.get("files_discovered", 0),
+                "files_updated": crawl_result.get("files_updated", 0),
+            },
+            raw_output=json.dumps(crawl_result, default=str)[:2000],
+            comment=crawl_result.get("error") if not crawl_result.get("ok") else None,
+        )
 
-    refresh_span = _start_span(name="agent:sentinel:drive-refresh", parent=trace_id, project=project)
-    refresh_result = run_drive_refresh(project=project)
-    _end_span(
-        refresh_span,
-        status="ok" if refresh_result.get("ok") else "error",
-        metrics={
-            "member": "sentinel",
-            "files_updated": refresh_result.get("files_updated", 0),
-        },
-        raw_output=json.dumps(refresh_result, default=str)[:2000],
-        comment=refresh_result.get("error") if not refresh_result.get("ok") else None,
-    )
+        refresh_span = _start_span(name=f"agent:sentinel:drive-refresh:{dp}", parent=trace_id, project=dp)
+        refresh_result = run_drive_refresh(project=dp)
+        _end_span(
+            refresh_span,
+            status="ok" if refresh_result.get("ok") else "error",
+            metrics={
+                "member": "sentinel",
+                "files_updated": refresh_result.get("files_updated", 0),
+            },
+            raw_output=json.dumps(refresh_result, default=str)[:2000],
+            comment=refresh_result.get("error") if not refresh_result.get("ok") else None,
+        )
 
     # Step 2: Cartographer incremental Drive sync (MERGE, not DETACH DELETE)
     # Pushes Document nodes + ABOUT edges from drive-index.db into Neo4j.
@@ -599,13 +604,13 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="cmd", required=False)
 
     p_full = sub.add_parser("full", help="Run the full cycle: scan + queue.")
-    p_full.add_argument("--project", default="anaro-labs", choices=["anaro-labs", "estate-mate"])
+    p_full.add_argument("--project", default="anaro-labs", choices=["anaro-labs", "estate-mate", "all"])
     p_full.add_argument("--force", action="store_true")
     p_full.add_argument("--skip-kg", action="store_true", default=True)
     p_full.set_defaults(func=cmd_full)
 
     p_scan = sub.add_parser("scan-only", help="Run the scan layer only.")
-    p_scan.add_argument("--project", default="anaro-labs", choices=["anaro-labs", "estate-mate"])
+    p_scan.add_argument("--project", default="anaro-labs", choices=["anaro-labs", "estate-mate", "all"])
     p_scan.add_argument("--force", action="store_true")
     p_scan.add_argument("--skip-kg", action="store_true", default=True)
     p_scan.set_defaults(func=cmd_scan_only)
