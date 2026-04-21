@@ -294,7 +294,9 @@ def scan_granola(project_config, last_scan_ts):
     batch_script = granola_cfg.get("batch_script") or granola_cfg["script"]
 
     filter_folders = granola_cfg.get("filter_folders")
-    cmd = [sys.executable, batch_script, "--since", "28"]
+    # Must run under uv so that `requests` (and other deps) are available.
+    # sys.executable is the system Python which lacks the venv's packages.
+    cmd = ["uv", "run", "--with", "requests", "python3", batch_script, "--since", "28"]
     if filter_folders:
         # EM needs folder data so the EM filter can route by Granola folder
         cmd.append("--include-folders")
@@ -784,13 +786,18 @@ def run_scan(project_name, config, force=False, skip_kg=False):
     cache_data["processed_meetings"] = existing_cache.get("processed_meetings", {})
     cache_data["processed_emails"] = existing_cache.get("processed_emails", {})
 
-    # Add scan results (use existing data as fallback for failed scanners)
+    # Add scan results. When a scanner fails, preserve stale data but tag it
+    # with _stale:true so check_work.py and downstream members can detect it
+    # rather than treating stale data as a fresh scan.
     for section in ("gmail", "granola", "linear", "calendar"):
         if section in scan_results:
             cache_data[section] = scan_results[section]
         elif section in existing_cache:
-            cache_data[section] = existing_cache[section]
-            print(f"  Using cached data for [{section}] (scanner failed)", file=sys.stderr)
+            stale = existing_cache[section]
+            if isinstance(stale, dict):
+                stale = dict(stale, _stale=True)
+            cache_data[section] = stale
+            print(f"  Using STALE cached data for [{section}] (scanner failed - tagged _stale:true)", file=sys.stderr)
 
     # Clerk results: flatten into top-level gmail_attachments and gmail_drive_links
     if "clerk" in scan_results and scan_results["clerk"]:
