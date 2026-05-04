@@ -531,6 +531,26 @@
           ]
         },
         {
+          "pattern": "lands_on",
+          "detect": "\"lands on\", \"land on\", \"landing on\", \"lands as\" used metaphorically (cost / bias / impact / consequence lands on someone or something). Excludes literal physical landing (a plane lands on the runway).",
+          "replace": "Name the actual mechanism. Who pays, who absorbs, who covers, who carries the cost. \"Lands on\" is a writerly hand-wave - humans don't talk like that.",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "The under-forecast bias lands on Care as backlog and overtime.",
+              "good": "When forecasts run low, Care covers the gap with backlog and overtime."
+            },
+            {
+              "bad": "The cost lands on the customer.",
+              "good": "Customers pay for it through higher prices."
+            },
+            {
+              "bad": "The five audits map where that spend lands and where it leaks.",
+              "good": "The five audits map how that cost is planned and where in the process it leaks."
+            }
+          ]
+        },
+        {
           "pattern": "over_intellectualizing",
           "detect": "Unnecessarily complex vocabulary or dense academic structures where simpler language would work. Long words when short ones do the job. This is Roman's insecurity tell - reaching for complexity to sound credible.",
           "replace": "Flag it: \"This section feels like it's reaching for complexity.\" Suggest simpler alternative.",
