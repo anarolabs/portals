@@ -293,6 +293,26 @@
               "good": "The design and engineering teams share a component library and review each other's work weekly."
             }
           ]
+        },
+        {
+          "pattern": "stand_up",
+          "detect": "\"stand up\", \"standing up\", \"stood up\" used to mean create / start / launch / set up (a meeting, cadence, process, team, system, working group). Excludes literal physical standing.",
+          "replace": "Use \"create\", \"start\", \"set up\", or just say what's happening. \"Stand up\" is startup-jargon performing dynamism that isn't there.",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "Stand up three recurring cadences with FP&A, Product, and Patrycja's team.",
+              "good": "Create three recurring meeting cadences: WFM x FP&A x Product, WFM x Patrycja's team, WFM x Platform & Applications."
+            },
+            {
+              "bad": "We need to stand up a working group on this.",
+              "good": "We need a working group on this."
+            },
+            {
+              "bad": "The team stood up a new alerting system.",
+              "good": "The team built a new alerting system."
+            }
+          ]
         }
       ]
     },
@@ -459,8 +479,37 @@
     {
       "id": "rhetorical_tells",
       "name": "Rhetorical AI tells",
-      "note": "Added 2026-03-28. Maps to eval rubric anti-pattern blockers AP02-AP07, APW01.",
+      "note": "Added 2026-03-28. Maps to eval rubric anti-pattern blockers AP02-AP07, APW01. Top-priority pattern: object_first_ownership - Roman flags this as the most-frequent residual LLM tell.",
       "patterns": [
+        {
+          "pattern": "object_first_ownership",
+          "priority": "high",
+          "detect": "Sentences where a process, object, task, role, or responsibility is the grammatical subject and a person or team is named at the end via verbs like \"sits with\", \"lands with\", \"rests with\", \"lies with\", \"resides with\", \"belongs to\", \"falls to\", \"is held by\". The construction 'X sits with Y' / 'X lives with Y' is a writerly inversion. Humans put the owner first and use active verbs.",
+          "replace": "Invert the sentence. Lead with the person or team, then say what they do or own using an active verb. Pattern: 'X sits with Anna' becomes 'Anna does X' or 'Anna is the only one who does X'.",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "The CCmath calibration work that holds each cycle together sits with Anna only.",
+              "good": "Anna is the only member of the team who consistently runs the CCmath calibration cycle (parameter tuning, language and channel weighting). That work requires alignment with the rest of the team to scale beyond her."
+            },
+            {
+              "bad": "RTA execution sits with GYG's three-person team.",
+              "good": "GYG's three-person WFM team handles all RTA execution today."
+            },
+            {
+              "bad": "Knowledge of Zendesk WFM lives with Vincenzo.",
+              "good": "Vincenzo is the only person who knows Zendesk WFM end to end."
+            },
+            {
+              "bad": "The decision rests with the steering committee.",
+              "good": "The steering committee owns the decision."
+            },
+            {
+              "bad": "Responsibility for the migration falls to the platform team.",
+              "good": "The platform team owns the migration."
+            }
+          ]
+        },
         {
           "pattern": "performative_insight",
           "detect": "\"Here's what no one tells you\", \"The real reason\", \"The truth about\", \"What nobody mentions\"",
