@@ -1,3 +1,9 @@
+---
+classified_at: '2026-05-05'
+classified_by: librarian
+role: context
+---
+
 # Portals - Development progress
 
 **Last updated**: 2025-11-15 (Session 6)

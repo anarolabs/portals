@@ -1,3 +1,9 @@
+---
+classified_at: '2026-05-05'
+classified_by: librarian
+role: reference
+---
+
 # Portals - Agent context
 
 ## Project overview
