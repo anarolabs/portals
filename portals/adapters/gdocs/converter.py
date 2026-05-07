@@ -2016,6 +2016,7 @@ class GoogleDocsConverter:
                         },
                         "paragraphStyle": {
                             "indentStart": {"magnitude": 36, "unit": "PT"},
+                            "indentFirstLine": {"magnitude": 36, "unit": "PT"},
                             "borderLeft": {
                                 "color": {
                                     "color": {
@@ -2031,7 +2032,7 @@ class GoogleDocsConverter:
                                 "dashStyle": "SOLID",
                             },
                         },
-                        "fields": "indentStart,borderLeft",
+                        "fields": "indentStart,indentFirstLine,borderLeft",
                     }
                 })
 
