@@ -611,6 +611,42 @@
               "good": "Teams are starting to think differently. We need to adjust how we work."
             }
           ]
+        },
+        {
+          "pattern": "lands_anchor",
+          "detect": "\"this is where it lands\", \"here is where it lands\", \"this is where X lands\", \"where it lands\", \"where the X lands\" used as a rhetorical anchor — the writer pretending to arrive at a point. Distinct from lands_on (which catches the mechanism use \"the cost lands on Y\"); this pattern catches the anchor use that opens or closes a paragraph as if the argument has landed somewhere it has not actually traveled.",
+          "replace": "State the conclusion directly. \"This is where it lands\" is filler. If the conclusion is real, lead with it. If it is not, cut the sentence.",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "And this is where it lands: the WFM team needs different tooling.",
+              "good": "The WFM team needs different tooling."
+            },
+            {
+              "bad": "Here is where the cost lands.",
+              "good": "Care covers the cost through backlog and overtime."
+            },
+            {
+              "bad": "That is where the argument lands.",
+              "good": "The argument is that we should buy, not build."
+            }
+          ]
+        },
+        {
+          "pattern": "saying_quiet_part",
+          "detect": "\"saying the quiet part out loud\", \"say the quiet part out loud\", \"the quiet part out loud\" — clichéd LLM tell. Roman finds it infuriating because it performs insight rather than delivering it.",
+          "replace": "State the actual observation directly. The phrase \"saying the quiet part out loud\" is signaling that something important follows; just say the important thing.",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "Saying the quiet part out loud: most managers do not actually use AI day to day.",
+              "good": "Most managers do not actually use AI day to day."
+            },
+            {
+              "bad": "To say the quiet part out loud, the budget is gone.",
+              "good": "The budget is gone."
+            }
+          ]
         }
       ]
     }
