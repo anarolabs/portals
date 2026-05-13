@@ -577,26 +577,54 @@ def get_structure(doc_id: str, project: str = None):
         sys.exit(1)
 
 
-def append_text(doc_id: str, text: str, project: str = None):
-    """Append text to end of document."""
+def append_text(doc_id: str, text: str, project: str = None, tab: str = None):
+    """Append text to end of document or specific tab.
+
+    When tab is provided, the document is fetched with includeTabsContent=True,
+    the matching tab is located in the tabs structure, and the text is inserted
+    at the end of that tab's body with tabId in the location parameter.
+    """
     resolved_project = _resolve_project(project)
     docs_service = get_docs_service(project=resolved_project)
 
     try:
-        # Get current document to find end index
-        doc = docs_service.documents().get(documentId=doc_id).execute()
-        body = doc.get("body", {}).get("content", [])
+        if tab:
+            doc = docs_service.documents().get(
+                documentId=doc_id,
+                includeTabsContent=True,
+            ).execute()
 
-        # Find end index (last element's endIndex - 1)
-        end_index = 1
-        if body:
-            last_element = body[-1]
-            end_index = last_element.get("endIndex", 1) - 1
+            tab_obj = None
+            for t in doc.get("tabs", []):
+                if t.get("tabProperties", {}).get("tabId") == tab:
+                    tab_obj = t
+                    break
 
-        # Insert text at end
+            if tab_obj is None:
+                print(json.dumps({"error": f"Tab not found: {tab}"}), file=sys.stderr)
+                sys.exit(1)
+
+            body = tab_obj.get("documentTab", {}).get("body", {}).get("content", [])
+            end_index = 1
+            if body:
+                last_element = body[-1]
+                end_index = last_element.get("endIndex", 1) - 1
+
+            location = {"index": end_index, "tabId": tab}
+        else:
+            doc = docs_service.documents().get(documentId=doc_id).execute()
+            body = doc.get("body", {}).get("content", [])
+
+            end_index = 1
+            if body:
+                last_element = body[-1]
+                end_index = last_element.get("endIndex", 1) - 1
+
+            location = {"index": end_index}
+
         requests = [{
             "insertText": {
-                "location": {"index": end_index},
+                "location": location,
                 "text": "\n" + text if end_index > 1 else text
             }
         }]
@@ -610,6 +638,7 @@ def append_text(doc_id: str, text: str, project: str = None):
             "success": True,
             "document_id": doc_id,
             "appended_length": len(text),
+            "tab": tab,
             "project": resolved_project
         }, indent=2))
 
@@ -2226,7 +2255,7 @@ def main():
     elif args.append:
         if not args.text:
             parser.error("--append requires --text")
-        append_text(args.append, args.text, args.project)
+        append_text(args.append, args.text, args.project, args.tab)
 
     elif args.batch:
         if not args.requests:
