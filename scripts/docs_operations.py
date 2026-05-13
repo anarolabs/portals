@@ -305,6 +305,25 @@ def _offset_indices(obj, offset):
             _offset_indices(item, offset)
 
 
+def _inject_tab_id(obj, tab_id):
+    """Recursively add tabId to all location and range objects in API request objects.
+
+    A "location" object has an `index` field; a "range" object has `startIndex`
+    and `endIndex`. Both can accept a `tabId` to scope the operation to a
+    specific tab in a tabbed document. This walks the request tree and adds
+    tabId wherever it sees one of those shapes.
+    """
+    if isinstance(obj, dict):
+        if ("index" in obj or "startIndex" in obj) and "tabId" not in obj:
+            obj["tabId"] = tab_id
+        for key in list(obj.keys()):
+            if key != "tabId":
+                _inject_tab_id(obj[key], tab_id)
+    elif isinstance(obj, list):
+        for item in obj:
+            _inject_tab_id(item, tab_id)
+
+
 def create_document(title: str, content: str = None, folder_id: str = None, project: str = None, file_path: str = None):
     """Create a new Google Doc."""
     resolved_project = _resolve_project(project, file_path)
@@ -1624,12 +1643,15 @@ def insert_table(doc_id: str, after_heading: str, table_file: str, heading_text:
         sys.exit(1)
 
 
-def insert_section(doc_id: str, after_heading: str, md_file: str, project: str = None):
+def insert_section(doc_id: str, after_heading: str, md_file: str, project: str = None, tab: str = None):
     """Insert formatted markdown content after a heading.
 
     Uses the converter for formatting, which means all spacing and typography
     logic (heading spaceAbove, paragraph spacing, dense section detection, etc.)
     is automatically applied.
+
+    When tab is provided, the heading is searched within that tab's body and
+    insertion happens at the tab-scoped index with tabId in location/range.
     """
     resolved_project = _resolve_project(project)
     docs_service = get_docs_service(project=resolved_project)
@@ -1656,15 +1678,33 @@ def insert_section(doc_id: str, after_heading: str, md_file: str, project: str =
     batch_requests = converter.generate_batch_requests(conversion)
 
     try:
-        # Fetch doc, find insertion point
-        doc = docs_service.documents().get(documentId=doc_id).execute()
-        body = doc.get("body", {}).get("content", [])
-        heading_map = _build_heading_map(body, doc.get("inlineObjects", {}))
+        # Fetch doc; if tab specified, scope to that tab's body
+        if tab:
+            doc = docs_service.documents().get(
+                documentId=doc_id, includeTabsContent=True
+            ).execute()
+            tab_obj = None
+            for t in doc.get("tabs", []):
+                if t.get("tabProperties", {}).get("tabId") == tab:
+                    tab_obj = t
+                    break
+            if tab_obj is None:
+                print(json.dumps({"error": f"Tab not found: {tab}"}), file=sys.stderr)
+                sys.exit(1)
+            body = tab_obj.get("documentTab", {}).get("body", {}).get("content", [])
+            inline_objects = tab_obj.get("documentTab", {}).get("inlineObjects", {})
+        else:
+            doc = docs_service.documents().get(documentId=doc_id).execute()
+            body = doc.get("body", {}).get("content", [])
+            inline_objects = doc.get("inlineObjects", {})
+
+        heading_map = _build_heading_map(body, inline_objects)
 
         if after_heading not in heading_map:
             print(json.dumps({
                 "error": f"Heading not found: {after_heading}",
                 "available_headings": list(heading_map.keys()),
+                "tab": tab,
             }), file=sys.stderr)
             sys.exit(1)
 
@@ -1677,9 +1717,12 @@ def insert_section(doc_id: str, after_heading: str, md_file: str, project: str =
 
         # Insert separator + plain text
         text_to_insert = "\n" + plain_text
+        insert_req = {"insertText": {"location": {"index": insert_at}, "text": text_to_insert}}
+        if tab:
+            _inject_tab_id(insert_req, tab)
         docs_service.documents().batchUpdate(
             documentId=doc_id,
-            body={"requests": [{"insertText": {"location": {"index": insert_at}, "text": text_to_insert}}]},
+            body={"requests": [insert_req]},
         ).execute()
 
         # Offset and apply formatting requests
@@ -1713,6 +1756,9 @@ def insert_section(doc_id: str, after_heading: str, md_file: str, project: str =
         else:
             all_reqs = [reset_req]
 
+        if tab:
+            _inject_tab_id(all_reqs, tab)
+
         docs_service.documents().batchUpdate(
             documentId=doc_id,
             body={"requests": all_reqs},
@@ -1722,6 +1768,7 @@ def insert_section(doc_id: str, after_heading: str, md_file: str, project: str =
             "success": True,
             "document_id": doc_id,
             "section_inserted": True,
+            "tab": tab,
             "url": f"https://docs.google.com/document/d/{doc_id}/edit",
             "project": resolved_project,
         }, indent=2))
@@ -2301,7 +2348,7 @@ def main():
     elif args.insert_section:
         if not args.after_heading or not args.file:
             parser.error("--insert-section requires --after-heading and --file")
-        insert_section(args.insert_section, args.after_heading, args.file, args.project)
+        insert_section(args.insert_section, args.after_heading, args.file, args.project, args.tab)
 
     elif args.export_pdf:
         export_pdf_doc(args.export_pdf, output_path=args.output, project=args.project)
