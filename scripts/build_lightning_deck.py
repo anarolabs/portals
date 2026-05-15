@@ -37,11 +37,14 @@ FONT = "Inter"
 # 16:9 dimensions in PT (10" × 5.625" = 720 × 405)
 SLIDE_W = 720
 SLIDE_H = 405
-MARGIN = 60
+MARGIN = 44
 
 # Type scale (sized for 720pt-wide slide)
-HERO = 56
-HEADLINE = 36
+# Empirical: bold Inter avg char ~0.55em wide. At 720-2*44=632pt content width,
+# max chars per line = 632 / (size * 0.55). At 44pt that's ~26 chars; at 56pt ~20 chars.
+TITLE_HERO = 56          # slide 1 — 2 lines manually broken
+HERO = 40                # slide 3 — 4 lines fit at 115% line spacing in 405pt
+HEADLINE = 36            # slide 2
 BODY = 18
 META = 10
 
@@ -67,22 +70,22 @@ def _new_slide(reqs, idx):
 # Slide builders
 # ============================================================================
 def slide_1_title(reqs):
-    """Template A: headline top-area, subtitle below, meta bottom-left."""
+    """Template A: 2-line headline (manual break), subtitle below, meta bottom-left."""
     sid = _new_slide(reqs, 0)
 
-    # Headline
+    # Headline — manual line break for hero composition
     hid = _sid()
-    text = "Toward ambient intelligence."
-    _create_textbox(reqs, sid, hid, MARGIN, 110, SLIDE_W - 2 * MARGIN, 80)
+    text = "Toward ambient\nintelligence."
+    _create_textbox(reqs, sid, hid, MARGIN, 90, SLIDE_W - 2 * MARGIN, 150)
     _insert_text(reqs, hid, text)
-    _style_text(reqs, hid, 0, len(text), font_size=HERO, bold=True,
+    _style_text(reqs, hid, 0, len(text), font_size=TITLE_HERO, bold=True,
                 color=PRIMARY, font_family=FONT)
-    _style_para(reqs, hid, 0, len(text), line_spacing=110)
+    _style_para(reqs, hid, 0, len(text), line_spacing=105)
 
-    # Subtitle (italic, gray)
+    # Subtitle (italic, gray) — clear of headline
     sub_id = _sid()
     sub = "A knowledge graph journey."
-    _create_textbox(reqs, sid, sub_id, MARGIN, 195, SLIDE_W - 2 * MARGIN, 30)
+    _create_textbox(reqs, sid, sub_id, MARGIN, 260, SLIDE_W - 2 * MARGIN, 30)
     _insert_text(reqs, sub_id, sub)
     _style_text(reqs, sub_id, 0, len(sub), font_size=BODY,
                 color=SECONDARY, font_family=FONT, italic=True)
@@ -90,7 +93,7 @@ def slide_1_title(reqs):
     # Meta line (bottom-left)
     meta_id = _sid()
     meta = "Roman Siepelmeyer · Anaro Labs"
-    _create_textbox(reqs, sid, meta_id, MARGIN, SLIDE_H - MARGIN + 18,
+    _create_textbox(reqs, sid, meta_id, MARGIN, SLIDE_H - 28,
                     SLIDE_W - 2 * MARGIN, 14)
     _insert_text(reqs, meta_id, meta)
     _style_text(reqs, meta_id, 0, len(meta), font_size=META,
@@ -101,10 +104,10 @@ def slide_2_anchor(reqs):
     """Template C: headline + 4-line body + accent kicker."""
     sid = _new_slide(reqs, 1)
 
-    # Headline
+    # Headline — tighter top margin
     hid = _sid()
     text = "A lot of context switching."
-    _create_textbox(reqs, sid, hid, MARGIN, MARGIN, SLIDE_W - 2 * MARGIN, 60)
+    _create_textbox(reqs, sid, hid, MARGIN, 50, SLIDE_W - 2 * MARGIN, 55)
     _insert_text(reqs, hid, text)
     _style_text(reqs, hid, 0, len(text), font_size=HEADLINE, bold=True,
                 color=PRIMARY, font_family=FONT)
@@ -119,7 +122,7 @@ def slide_2_anchor(reqs):
     body_text = "\n".join(body_lines)
 
     body_id = _sid()
-    _create_textbox(reqs, sid, body_id, MARGIN, 150, SLIDE_W - 2 * MARGIN, 160)
+    _create_textbox(reqs, sid, body_id, MARGIN, 140, SLIDE_W - 2 * MARGIN, 160)
     _insert_text(reqs, body_id, body_text)
     _style_text(reqs, body_id, 0, len(body_text), font_size=BODY,
                 color=PRIMARY, font_family=FONT)
@@ -135,20 +138,28 @@ def slide_2_anchor(reqs):
 
 
 def slide_3_hero(reqs):
-    """Template B: three hero lines, one word in accent."""
+    """Template B: hero claim, intentional line breaks, one accent word.
+
+    44pt fits 'The models are good enough.' (27ch) on one line at 632pt content
+    width; the second beat is manually broken into two lines so the second line
+    doesn't auto-wrap mid-word.
+    """
     sid = _new_slide(reqs, 2)
 
     line1 = "The models are good enough."
-    line2 = "The gap is persistent structured memory."
+    line2a = "The gap is persistent"
+    line2b = "structured memory."
     line3 = "I'm team scaffolding."
-    full = f"{line1}\n{line2}\n{line3}"
+    full = f"{line1}\n{line2a}\n{line2b}\n{line3}"
 
+    # 4 visible lines × 40pt × 1.15 spacing ≈ 184pt + Google padding ≈ 220pt total.
+    # Slide height 405pt; start at y=85 leaves bottom margin.
     hid = _sid()
-    _create_textbox(reqs, sid, hid, MARGIN, 90, SLIDE_W - 2 * MARGIN, 240)
+    _create_textbox(reqs, sid, hid, MARGIN, 85, SLIDE_W - 2 * MARGIN, 240)
     _insert_text(reqs, hid, full)
     _style_text(reqs, hid, 0, len(full), font_size=HERO, bold=True,
                 color=PRIMARY, font_family=FONT)
-    _style_para(reqs, hid, 0, len(full), line_spacing=130)
+    _style_para(reqs, hid, 0, len(full), line_spacing=115)
 
     # Highlight "scaffolding" in purple
     scaff_start = full.find("scaffolding")
@@ -192,12 +203,22 @@ SPEAKER_NOTES = [
 # ============================================================================
 # Orchestrator
 # ============================================================================
-def build(project: str = "anaro-labs") -> str:
+def build(project: str = "anaro-labs", delete_old_id: str | None = None) -> str:
     service = get_slides_service(project=project)
+
+    # Optionally delete prior iteration
+    if delete_old_id:
+        from google_client import get_drive_service
+        drive = get_drive_service(project=project)
+        try:
+            drive.files().delete(fileId=delete_old_id).execute()
+        except Exception as e:
+            print(f"WARN: could not delete prior presentation {delete_old_id}: {e}",
+                  file=sys.stderr)
 
     # Create empty presentation
     pres = service.presentations().create(
-        body={"title": "Lightning talk - toward ambient intelligence (v1, slides 1-3)"}
+        body={"title": "Lightning talk - toward ambient intelligence (v3, slides 1-3)"}
     ).execute()
     pres_id = pres["presentationId"]
     default_slide_id = pres["slides"][0]["objectId"]
@@ -248,4 +269,10 @@ def build(project: str = "anaro-labs") -> str:
 
 
 if __name__ == "__main__":
-    build()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--project", default="anaro-labs")
+    parser.add_argument("--delete-old", default=None,
+                        help="Presentation ID to delete before creating the new one")
+    args = parser.parse_args()
+    build(project=args.project, delete_old_id=args.delete_old)
