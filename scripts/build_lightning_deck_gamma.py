@@ -22,6 +22,12 @@ from pathlib import Path
 import urllib.request
 import urllib.error
 
+# --- 1Password-backed credentials resolver ---
+import sys as _cred_sys
+import os as _cred_os
+_cred_sys.path.insert(0, _cred_os.path.expanduser("~/Documents/Claude Code/knowledge-graph/03-ingestion"))
+from credentials import get as _get_cred  # noqa: E402
+
 
 GAMMA_BASE = "https://public-api.gamma.app/v0.2"
 GAMMA_BASE_V1 = "https://public-api.gamma.app/v1.0"
@@ -235,7 +241,10 @@ def poll_generation(api_key: str, gen_id: str) -> dict:
 # Main
 # ============================================================================
 def main():
-    api_key = os.environ.get("GAMMA_API_KEY")
+    try:
+        api_key = _get_cred("gamma")["api_key"]
+    except Exception:
+        api_key = os.environ.get("GAMMA_API_KEY")
     if not api_key:
         print("ERROR: GAMMA_API_KEY not set. Add to ~/.zshrc and reopen shell, "
               "or pass it inline: GAMMA_API_KEY=sk-gamma-... bash run.sh "
