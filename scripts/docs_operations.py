@@ -1931,6 +1931,118 @@ def create_tab_from_markdown(doc_id: str, title: str, markdown_file: str, projec
         sys.exit(1)
 
 
+def append_markdown_to_tab(doc_id: str, markdown_file: str, project: str = None, tab: str = None):
+    """Append formatted markdown to the end of a document or specific tab.
+
+    Preserves all existing content (inline images, headings, paragraphs).
+    Use this when the tab already has content you must keep and you want
+    formatted output - update-md replaces, insert-section needs a heading
+    anchor, plain --append loses formatting.
+    """
+    resolved_project = _resolve_project(project, markdown_file)
+    docs_service = get_docs_service(project=resolved_project)
+
+    md_path = Path(markdown_file)
+    if not md_path.exists():
+        print(json.dumps({"error": f"File not found: {markdown_file}"}), file=sys.stderr)
+        sys.exit(1)
+
+    markdown_content = md_path.read_text()
+
+    portals_path = Path.home() / "Documents/Claude Code/portals/portals/adapters/gdocs/converter.py"
+    if not portals_path.exists():
+        print(json.dumps({"error": "Converter not found at portals/portals/adapters/gdocs/converter.py"}), file=sys.stderr)
+        sys.exit(1)
+
+    sys.path.insert(0, str(portals_path.parent.parent.parent.parent))
+    from portals.adapters.gdocs.converter import GoogleDocsConverter
+
+    converter = GoogleDocsConverter()
+    conversion = converter.markdown_to_gdocs(markdown_content)
+    plain_text = conversion.plain_text
+    batch_requests = converter.generate_batch_requests(conversion)
+
+    try:
+        if tab:
+            doc = docs_service.documents().get(
+                documentId=doc_id, includeTabsContent=True
+            ).execute()
+            tab_obj = None
+            for t in doc.get("tabs", []):
+                if t.get("tabProperties", {}).get("tabId") == tab:
+                    tab_obj = t
+                    break
+            if tab_obj is None:
+                print(json.dumps({"error": f"Tab not found: {tab}"}), file=sys.stderr)
+                sys.exit(1)
+            body = tab_obj.get("documentTab", {}).get("body", {}).get("content", [])
+        else:
+            doc = docs_service.documents().get(documentId=doc_id).execute()
+            body = doc.get("body", {}).get("content", [])
+
+        end_index = 1
+        if body:
+            last_element = body[-1]
+            end_index = last_element.get("endIndex", 1) - 1
+
+        leading_newline = "\n" if end_index > 1 else ""
+        text_to_insert = leading_newline + plain_text
+
+        insert_req = {"insertText": {"location": {"index": end_index}, "text": text_to_insert}}
+        if tab:
+            _inject_tab_id(insert_req, tab)
+        docs_service.documents().batchUpdate(
+            documentId=doc_id,
+            body={"requests": [insert_req]},
+        ).execute()
+
+        plain_start = end_index + len(leading_newline)
+        plain_end = plain_start + len(plain_text)
+        reset_start = end_index if end_index > 1 else plain_start
+
+        reset_req = {
+            "updateParagraphStyle": {
+                "range": {"startIndex": reset_start, "endIndex": plain_end},
+                "paragraphStyle": {
+                    "namedStyleType": "NORMAL_TEXT",
+                    "spaceAbove": {"magnitude": 0, "unit": "PT"},
+                    "spaceBelow": {"magnitude": 0, "unit": "PT"},
+                },
+                "fields": "namedStyleType,spaceAbove,spaceBelow",
+            }
+        }
+
+        if batch_requests:
+            offset = plain_start - 1
+            offset_reqs = json.loads(json.dumps(batch_requests))
+            _offset_indices(offset_reqs, offset)
+            all_reqs = [reset_req] + offset_reqs
+        else:
+            all_reqs = [reset_req]
+
+        if tab:
+            _inject_tab_id(all_reqs, tab)
+
+        docs_service.documents().batchUpdate(
+            documentId=doc_id,
+            body={"requests": all_reqs},
+        ).execute()
+
+        print(json.dumps({
+            "success": True,
+            "document_id": doc_id,
+            "appended_markdown": True,
+            "appended_length": len(plain_text),
+            "tab": tab,
+            "url": f"https://docs.google.com/document/d/{doc_id}/edit",
+            "project": resolved_project,
+        }, indent=2))
+
+    except Exception as e:
+        print(json.dumps({"error": str(e)}), file=sys.stderr)
+        sys.exit(1)
+
+
 def update_from_markdown(doc_id: str, markdown_file: str, project: str = None, tab_id: str = None, skip_title_sync: bool = False):
     """
     Update existing document with new markdown content.
@@ -2240,6 +2352,7 @@ def main():
     group.add_argument("--append", metavar="DOC_ID", help="Append text to document")
     group.add_argument("--batch", metavar="DOC_ID", help="Apply batch updates")
     group.add_argument("--update-md", metavar="DOC_ID", help="Update existing doc with markdown")
+    group.add_argument("--append-md", metavar="DOC_ID", help="Append formatted markdown to end of doc or tab (preserves existing content; requires --file)")
     group.add_argument("--list-tabs", metavar="DOC_ID", help="List tabs in a document")
     group.add_argument("--create-tab", metavar="DOC_ID", help="Create a new tab (requires --title)")
     group.add_argument("--create-tab-md", metavar="DOC_ID", help="Create tab with markdown content (requires --title and --file)")
@@ -2313,6 +2426,11 @@ def main():
         if not args.file:
             parser.error("--update-md requires --file")
         update_from_markdown(args.update_md, args.file, args.project, args.tab, args.skip_title_sync)
+
+    elif args.append_md:
+        if not args.file:
+            parser.error("--append-md requires --file")
+        append_markdown_to_tab(args.append_md, args.file, args.project, args.tab)
 
     elif args.list_tabs:
         list_tabs(args.list_tabs, args.project)
