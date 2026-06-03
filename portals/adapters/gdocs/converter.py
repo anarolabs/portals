@@ -2180,6 +2180,20 @@ class GoogleDocsConverter:
             table_requests = self._generate_table_requests(conversion, supp)
             requests.extend(table_requests)
 
+        # Safety: drop style requests with an empty range (startIndex >= endIndex).
+        # Google Docs rejects these with "The range should not be empty" and aborts
+        # the whole batch. They style nothing, so removing them is a no-op for output.
+        # Zero-length formatted runs can arise from empty bold/italic spans in table
+        # cells (see _generate_table_requests).
+        def _has_empty_range(req: dict[str, Any]) -> bool:
+            for key in ("updateTextStyle", "updateParagraphStyle"):
+                rng = req.get(key, {}).get("range")
+                if rng and rng.get("startIndex", 0) >= rng.get("endIndex", 0):
+                    return True
+            return False
+
+        requests = [r for r in requests if not _has_empty_range(r)]
+
         return requests
 
     def _generate_table_requests(self, conversion: ConversionResult, supp: list[int] | None = None) -> list[dict[str, Any]]:
