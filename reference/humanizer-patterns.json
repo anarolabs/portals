@@ -391,6 +391,22 @@
               "good": "The client, though, wanted a different approach."
             }
           ]
+        },
+        {
+          "pattern": "anaphora_doubling",
+          "detect": "Two short clauses with the same opener stacked for rhythm, especially \"It is X, it is Y\" or \"It's X, it's Y\" with single-word predicates. A compression tell - the writer adds cadence instead of stating the facts.",
+          "replace": "State it once, plainly. Merge into one clause or keep the single fact that matters.",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "It is manual, it is slow, and nothing tracks what is still open.",
+              "good": "Doing it by hand is slow, and nothing tracks what is still open."
+            },
+            {
+              "bad": "It's fast, it's cheap, it's reliable.",
+              "good": "It runs in under a second, costs nothing, and has not failed in production."
+            }
+          ]
         }
       ]
     },
@@ -645,6 +661,22 @@
             {
               "bad": "To say the quiet part out loud, the budget is gone.",
               "good": "The budget is gone."
+            }
+          ]
+        },
+        {
+          "pattern": "cliche_filler",
+          "detect": "Stock cliches that fill space without adding a fact: \"writes itself\", \"the name of the game\", \"at the end of the day\", \"needle in a haystack\", \"double-edged sword\", \"best of both worlds\", \"low-hanging fruit\", \"move the needle\". Dead metaphors that perform fluency.",
+          "replace": "Cut the cliche and state the fact. Let the facts speak for themselves.",
+          "severity": "always",
+          "examples": [
+            {
+              "bad": "The sales story writes itself: Rackham lost EUR 43k to an unchecked payment.",
+              "good": "Rackham lost EUR 43k to an unchecked payment."
+            },
+            {
+              "bad": "At the end of the day, the rent roll has to be trusted.",
+              "good": "The rent roll has to be trusted."
             }
           ]
         }
