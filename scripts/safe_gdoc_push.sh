@@ -18,15 +18,26 @@ FILE="${2:?Usage: safe_gdoc_push.sh DOC_ID FILE [PROJECT] [--force]}"
 PROJECT="${3:-anaro-labs}"
 FORCE="${4:-}"
 
+# Optional tab scoping. Set GDOC_TAB=<tabId> to read/push/cache a single tab of
+# a multi-tab doc. Unset (default) preserves the original whole-doc behavior, so
+# existing callers are unaffected. update_from_markdown is tab-safe: with a tabId
+# it clears and replaces only that tab's body (other tabs are never touched).
+TAB_ARGS=()
+TAB_SUFFIX=""
+if [ -n "${GDOC_TAB:-}" ]; then
+  TAB_ARGS=(--tab "$GDOC_TAB")
+  TAB_SUFFIX=".${GDOC_TAB}"
+fi
+
 CACHE_DIR="/tmp/gdoc_cache"
 mkdir -p "$CACHE_DIR"
-LAST_PUSH_FILE="$CACHE_DIR/${DOC_ID}.txt"
-CURRENT_FILE="$CACHE_DIR/${DOC_ID}.current.txt"
+LAST_PUSH_FILE="$CACHE_DIR/${DOC_ID}${TAB_SUFFIX}.txt"
+CURRENT_FILE="$CACHE_DIR/${DOC_ID}${TAB_SUFFIX}.current.txt"
 
 PORTALS="/Users/romansiepelmeyer/Documents/Claude Code/portals/run.sh"
 
-# Step 1: Read current Google Doc
-bash "$PORTALS" scripts/docs_operations.py --read "$DOC_ID" --project "$PROJECT" 2>/dev/null \
+# Step 1: Read current Google Doc (tab-scoped if GDOC_TAB set)
+bash "$PORTALS" scripts/docs_operations.py --read "$DOC_ID" "${TAB_ARGS[@]}" --project "$PROJECT" 2>/dev/null \
   | python3 -c "import sys,json; print(json.load(sys.stdin).get('content',''))" \
   > "$CURRENT_FILE"
 
@@ -75,12 +86,12 @@ if [ "$ACTIVE_COUNT" -gt 0 ]; then
   fi
 fi
 
-# Step 3: Push
-echo "Pushing to Google Doc..."
-bash "$PORTALS" scripts/docs_operations.py --update-md "$DOC_ID" --file "$FILE" --project "$PROJECT"
+# Step 3: Push (tab-scoped if GDOC_TAB set)
+echo "Pushing to Google Doc${GDOC_TAB:+ (tab $GDOC_TAB)}..."
+bash "$PORTALS" scripts/docs_operations.py --update-md "$DOC_ID" "${TAB_ARGS[@]}" --file "$FILE" --project "$PROJECT"
 
 # Step 4: Cache the new state for future diffs
-bash "$PORTALS" scripts/docs_operations.py --read "$DOC_ID" --project "$PROJECT" 2>/dev/null \
+bash "$PORTALS" scripts/docs_operations.py --read "$DOC_ID" "${TAB_ARGS[@]}" --project "$PROJECT" 2>/dev/null \
   | python3 -c "import sys,json; print(json.load(sys.stdin).get('content',''))" \
   > "$LAST_PUSH_FILE"
 
