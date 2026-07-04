@@ -44,26 +44,38 @@ Usage:
     # Delete a tab
     python3 docs_operations.py --delete-tab DOC_ID --tab TAB_ID --project estate-mate
 
-    # Inspect document structure (indices, styles, heading map)
-    python3 docs_operations.py --inspect DOC_ID
+    # Reorder root-level tabs (give ALL root tabIds in the desired order)
+    python3 docs_operations.py --reorder-tabs DOC_ID --tab-order "tabId2,tabId1,tabId3"
 
-    # Apply targeted edits from operations file
-    python3 docs_operations.py --patch DOC_ID --ops fixes.json
+    # Inspect document structure (indices, styles, heading map); tab-scoped with --tab
+    python3 docs_operations.py --inspect DOC_ID [--tab TAB_ID]
+
+    # Apply targeted edits from operations file; indices are tab-local with --tab
+    python3 docs_operations.py --patch DOC_ID --ops fixes.json [--tab TAB_ID]
 
     # Insert formatted table after a heading
     python3 docs_operations.py --insert-table DOC_ID --after-heading "Next steps" --file table.json
 
-    # Insert formatted markdown section after a heading
-    python3 docs_operations.py --insert-section DOC_ID --after-heading "Executive summary" --file section.md
+    # Insert formatted markdown section after a heading (works inside a tab with --tab).
+    # Fragment headings map literally: md # -> HEADING_1, ## -> HEADING_2
+    # (use --promote-title for the old md # -> TITLE promotion).
+    python3 docs_operations.py --insert-section DOC_ID --after-heading "Executive summary" --file section.md [--tab TAB_ID]
+
+    # Full-document overwrite is clobber-guarded: it refuses when the doc was
+    # modified in Drive after the local md file's mtime. Override with --force.
+    python3 docs_operations.py --update-md DOC_ID --file content.md [--force]
+
+    # Move a scratch/obsolete doc to the Drive trash
+    python3 docs_operations.py --trash FILE_ID
 
     # Export document as PDF
     python3 docs_operations.py --export-pdf DOC_ID [--output /path/to/output.pdf] --project anaro-labs
 
-    # Find text in document (returns character index ranges)
-    python3 docs_operations.py --find-text DOC_ID --text "exact phrase to find"
+    # Find text in document (returns character index ranges; tab-local with --tab)
+    python3 docs_operations.py --find-text DOC_ID --text "exact phrase to find" [--tab TAB_ID]
 
-    # Find heading and its section boundaries
-    python3 docs_operations.py --find-heading DOC_ID --text "Section 5"
+    # Find heading and its section boundaries (tab-local with --tab)
+    python3 docs_operations.py --find-heading DOC_ID --text "Section 5" [--tab TAB_ID]
 
     # Check comment anchors (read-only, shows positions and quoted content)
     python3 docs_operations.py --check-comments DOC_ID --project anaro-labs
@@ -322,6 +334,68 @@ def _inject_tab_id(obj, tab_id):
     elif isinstance(obj, list):
         for item in obj:
             _inject_tab_id(item, tab_id)
+
+
+def _walk_tabs(tabs):
+    """Yield every tab in a document's tab tree, including nested child tabs."""
+    for tab in tabs:
+        yield tab
+        yield from _walk_tabs(tab.get("childTabs", []))
+
+
+def _fetch_body(docs_service, doc_id, tab=None):
+    """Fetch a document and return (doc, body_content, inline_objects).
+
+    With tab=None returns the default (first-tab) body, matching the plain
+    documents.get shape. With a tabId, fetches includeTabsContent and scopes
+    to that tab's body, searching nested child tabs too. Exits with a JSON
+    error if the tab does not exist.
+    """
+    if tab:
+        doc = docs_service.documents().get(
+            documentId=doc_id, includeTabsContent=True
+        ).execute()
+        for t in _walk_tabs(doc.get("tabs", [])):
+            if t.get("tabProperties", {}).get("tabId") == tab:
+                doc_tab = t.get("documentTab", {})
+                return doc, doc_tab.get("body", {}).get("content", []), doc_tab.get("inlineObjects", {})
+        available = [
+            t.get("tabProperties", {}).get("tabId")
+            for t in _walk_tabs(doc.get("tabs", []))
+        ]
+        print(json.dumps({"error": f"Tab not found: {tab}", "available_tabs": available}), file=sys.stderr)
+        sys.exit(1)
+
+    doc = docs_service.documents().get(documentId=doc_id).execute()
+    return doc, doc.get("body", {}).get("content", []), doc.get("inlineObjects", {})
+
+
+# Fragment heading mapping: the converter's full-document scheme promotes
+# md h1 -> TITLE, first h2 -> SUBTITLE, h2 -> HEADING_1, h3 -> HEADING_2 (one
+# level up). Inside a fragment inserted mid-document that promotion is wrong:
+# a "# Section" lands as a TITLE paragraph and every heading renders one level
+# too large, forcing an inspect-and-restyle pass after the insert. Fragment
+# paths (--insert-section, --append-md, --patch replaceMarkdown) therefore
+# remap to literal levels: TITLE -> HEADING_1, SUBTITLE -> HEADING_2,
+# HEADING_n -> HEADING_n+1 (capped at 6), so md #N renders as Docs Heading N.
+# Pass --promote-title to keep the old full-document promotion in fragments.
+def _literalize_heading_styles(requests):
+    """Rewrite namedStyleType in updateParagraphStyle requests to literal levels."""
+    for req in requests:
+        ups = req.get("updateParagraphStyle")
+        if not ups:
+            continue
+        style = ups.get("paragraphStyle", {}).get("namedStyleType")
+        if not style:
+            continue
+        if style == "TITLE":
+            ups["paragraphStyle"]["namedStyleType"] = "HEADING_1"
+        elif style == "SUBTITLE":
+            ups["paragraphStyle"]["namedStyleType"] = "HEADING_2"
+        elif style.startswith("HEADING_"):
+            level = int(style.split("_")[1])
+            ups["paragraphStyle"]["namedStyleType"] = f"HEADING_{min(level + 1, 6)}"
+    return requests
 
 
 def create_document(title: str, content: str = None, folder_id: str = None, project: str = None, file_path: str = None):
@@ -699,15 +773,17 @@ def batch_update(doc_id: str, requests_json: str, project: str = None):
 # =============================================================================
 
 
-def inspect_document(doc_id: str, project: str = None):
-    """Inspect document structure with indices, styles, and heading map."""
+def inspect_document(doc_id: str, project: str = None, tab: str = None):
+    """Inspect document structure with indices, styles, and heading map.
+
+    With tab, scopes to that tab's body; indices in the output are tab-local
+    and can be used directly in --patch/--insert-section with the same --tab.
+    """
     resolved_project = _resolve_project(project)
     docs_service = get_docs_service(project=resolved_project)
 
     try:
-        doc = docs_service.documents().get(documentId=doc_id).execute()
-        inline_objects = doc.get("inlineObjects", {})
-        body = doc.get("body", {}).get("content", [])
+        doc, body, inline_objects = _fetch_body(docs_service, doc_id, tab)
 
         elements = []
         for element in body:
@@ -796,6 +872,7 @@ def inspect_document(doc_id: str, project: str = None):
         print(json.dumps({
             "document_id": doc_id,
             "title": doc.get("title"),
+            "tab": tab,
             "elements": elements,
             "headingMap": heading_map,
             "project": resolved_project,
@@ -806,19 +883,18 @@ def inspect_document(doc_id: str, project: str = None):
         sys.exit(1)
 
 
-def find_text(doc_id: str, search_text: str, project: str = None):
+def find_text(doc_id: str, search_text: str, project: str = None, tab: str = None):
     """Find exact text in document and return character index ranges.
 
     Searches the full document text for all occurrences of the search string.
     Returns startIndex and endIndex for each match, plus surrounding context.
+    With tab, searches only that tab; indices are tab-local.
     """
     resolved_project = _resolve_project(project)
     docs_service = get_docs_service(project=resolved_project)
 
     try:
-        doc = docs_service.documents().get(documentId=doc_id).execute()
-        inline_objects = doc.get("inlineObjects", {})
-        body = doc.get("body", {}).get("content", [])
+        doc, body, inline_objects = _fetch_body(docs_service, doc_id, tab)
 
         # Build a mapping of document text position -> character index
         # We need to track the actual document indices, not just string positions
@@ -869,6 +945,7 @@ def find_text(doc_id: str, search_text: str, project: str = None):
         print(json.dumps({
             "document_id": doc_id,
             "search": search_text,
+            "tab": tab,
             "matchCount": len(matches),
             "matches": matches,
             "project": resolved_project,
@@ -879,20 +956,19 @@ def find_text(doc_id: str, search_text: str, project: str = None):
         sys.exit(1)
 
 
-def find_heading(doc_id: str, search_text: str, project: str = None):
+def find_heading(doc_id: str, search_text: str, project: str = None, tab: str = None):
     """Find a heading by text and return its section boundaries.
 
     Returns startIndex, endIndex of the heading element itself,
     plus sectionEnd (start of next heading at same or higher level).
     Uses case-insensitive substring matching.
+    With tab, searches only that tab; indices are tab-local.
     """
     resolved_project = _resolve_project(project)
     docs_service = get_docs_service(project=resolved_project)
 
     try:
-        doc = docs_service.documents().get(documentId=doc_id).execute()
-        inline_objects = doc.get("inlineObjects", {})
-        body = doc.get("body", {}).get("content", [])
+        doc, body, inline_objects = _fetch_body(docs_service, doc_id, tab)
 
         heading_map = _build_heading_map(body, inline_objects)
 
@@ -912,6 +988,7 @@ def find_heading(doc_id: str, search_text: str, project: str = None):
         print(json.dumps({
             "document_id": doc_id,
             "search": search_text,
+            "tab": tab,
             "matchCount": len(matches),
             "matches": matches,
             "project": resolved_project,
@@ -1108,7 +1185,7 @@ def resolve_comment(doc_id: str, comment_ids: list, message: str, project: str =
         sys.exit(1)
 
 
-def patch_document(doc_id: str, ops_file: str, project: str = None):
+def patch_document(doc_id: str, ops_file: str, project: str = None, tab: str = None, promote_title: bool = False):
     """Apply targeted element-level edits from an operations JSON file.
 
     Supports: replaceText, replaceMarkdown, insertText, deleteContent,
@@ -1116,9 +1193,19 @@ def patch_document(doc_id: str, ops_file: str, project: str = None):
     updateTableBorders, createChecklist.
     Content-modifying operations are auto-sorted in reverse index order.
 
+    All indices in the ops file refer to the document state BEFORE the patch;
+    ranges of later ops are shifted automatically to account for length changes
+    made by content ops at lower indices. Ops whose ranges overlap each other
+    are not supported.
+
+    With tab, all indices are tab-local and every request is scoped to that
+    tab (use --inspect/--find-text/--find-heading with the same --tab to get
+    the indices).
+
     replaceMarkdown deletes [startIndex, endIndex) then inserts formatted markdown
     at startIndex using the converter (headings, bold, italic, native bullet lists,
-    etc.). Formatting is applied in a second batchUpdate pass.
+    etc.). Formatting is applied in a second batchUpdate pass. Headings map
+    literally (md ## -> HEADING_2) unless promote_title is set.
     """
     resolved_project = _resolve_project(project)
     docs_service = get_docs_service(project=resolved_project)
@@ -1131,17 +1218,23 @@ def patch_document(doc_id: str, ops_file: str, project: str = None):
     ops = json.loads(ops_path.read_text())
     requests = []
     content_ops = []  # (sort_key, [requests])
-    style_ops = []
+    style_ops = []  # (anchor_index or None, request)
     markdown_format_ops = []  # (startIndex, plain_text, batch_requests) for second pass
+    content_deltas = []  # (index, length_delta) per content op, for shifting later ranges
 
     for op in ops:
         op_type = op.get("type")
 
         if op_type == "replaceText":
+            new_text = op.get("newText", op.get("text"))
+            if new_text is None:
+                print(json.dumps({"error": "replaceText op needs 'newText' (or 'text')", "op": op}), file=sys.stderr)
+                sys.exit(1)
             content_ops.append((op["startIndex"], [
                 {"deleteContentRange": {"range": {"startIndex": op["startIndex"], "endIndex": op["endIndex"]}}},
-                {"insertText": {"location": {"index": op["startIndex"]}, "text": op["newText"]}},
+                {"insertText": {"location": {"index": op["startIndex"]}, "text": new_text}},
             ]))
+            content_deltas.append((op["startIndex"], len(new_text) - (op["endIndex"] - op["startIndex"])))
         elif op_type == "replaceMarkdown":
             # Load converter on first use
             portals_path = Path.home() / "Documents/Claude Code/portals/portals/adapters/gdocs/converter.py"
@@ -1156,12 +1249,15 @@ def patch_document(doc_id: str, ops_file: str, project: str = None):
             conversion = converter.markdown_to_gdocs(op["markdown"])
             plain_text = conversion.plain_text
             batch_requests = converter.generate_batch_requests(conversion)
+            if not promote_title:
+                batch_requests = _literalize_heading_styles(batch_requests)
 
             # Content part: delete range then insert plain text (sorted with other content ops)
             content_ops.append((op["startIndex"], [
                 {"deleteContentRange": {"range": {"startIndex": op["startIndex"], "endIndex": op["endIndex"]}}},
                 {"insertText": {"location": {"index": op["startIndex"]}, "text": plain_text}},
             ]))
+            content_deltas.append((op["startIndex"], len(plain_text) - (op["endIndex"] - op["startIndex"])))
 
             # Formatting part: applied in a second batchUpdate after text is in place
             if batch_requests:
@@ -1170,26 +1266,28 @@ def patch_document(doc_id: str, ops_file: str, project: str = None):
             content_ops.append((op["index"], [
                 {"insertText": {"location": {"index": op["index"]}, "text": op["text"]}},
             ]))
+            content_deltas.append((op["index"], len(op["text"])))
         elif op_type == "deleteContent":
             content_ops.append((op["startIndex"], [
                 {"deleteContentRange": {"range": {"startIndex": op["startIndex"], "endIndex": op["endIndex"]}}},
             ]))
+            content_deltas.append((op["startIndex"], -(op["endIndex"] - op["startIndex"])))
         elif op_type == "updateParagraphStyle":
-            style_ops.append({
+            style_ops.append((op["startIndex"], {
                 "updateParagraphStyle": {
                     "range": {"startIndex": op["startIndex"], "endIndex": op["endIndex"]},
                     "paragraphStyle": op["paragraphStyle"],
                     "fields": op.get("fields", "namedStyleType"),
                 }
-            })
+            }))
         elif op_type == "updateTextStyle":
-            style_ops.append({
+            style_ops.append((op["startIndex"], {
                 "updateTextStyle": {
                     "range": {"startIndex": op["startIndex"], "endIndex": op["endIndex"]},
                     "textStyle": op["textStyle"],
                     "fields": op.get("fields", "bold"),
                 }
-            })
+            }))
         elif op_type == "updateTableCellStyle":
             cell_style = {}
             fields_list = []
@@ -1197,7 +1295,7 @@ def patch_document(doc_id: str, ops_file: str, project: str = None):
             if "backgroundColor" in s:
                 cell_style["backgroundColor"] = {"color": _make_rgb(s["backgroundColor"])}
                 fields_list.append("backgroundColor")
-            style_ops.append({
+            style_ops.append((op["tableStartIndex"], {
                 "updateTableCellStyle": {
                     "tableRange": {
                         "tableCellLocation": {
@@ -1211,14 +1309,14 @@ def patch_document(doc_id: str, ops_file: str, project: str = None):
                     "tableCellStyle": cell_style,
                     "fields": op.get("fields", ",".join(fields_list)),
                 }
-            })
+            }))
         elif op_type == "updateTableBorders":
             border = _make_border_def(
                 color=tuple(op.get("color", list(TABLE_BORDER_COLOR))),
                 width=op.get("width", TABLE_BORDER_WIDTH),
                 style=op.get("borderStyle", TABLE_BORDER_STYLE),
             )
-            style_ops.append({
+            style_ops.append((op["tableStartIndex"], {
                 "updateTableCellStyle": {
                     "tableRange": {
                         "tableCellLocation": {
@@ -1237,20 +1335,33 @@ def patch_document(doc_id: str, ops_file: str, project: str = None):
                     },
                     "fields": "borderTop,borderBottom,borderLeft,borderRight",
                 }
-            })
+            }))
         elif op_type == "createChecklist":
-            style_ops.append({
+            style_ops.append((op["startIndex"], {
                 "createParagraphBullets": {
                     "range": {"startIndex": op["startIndex"], "endIndex": op["endIndex"]},
                     "bulletPreset": "BULLET_CHECKBOX",
                 }
-            })
+            }))
 
-    # Sort content ops in reverse index order, then flatten
+    def _shift(anchor):
+        """Total length delta from content ops strictly below this anchor index."""
+        return sum(delta for idx, delta in content_deltas if idx < anchor)
+
+    # Sort content ops in reverse index order, then flatten. Reverse order keeps
+    # every content op's own indices valid against the pre-patch document.
     content_ops.sort(key=lambda x: x[0], reverse=True)
     for _, reqs in content_ops:
         requests.extend(reqs)
-    requests.extend(style_ops)
+
+    # Style ops run after all content ops in the same batch, so their pre-patch
+    # ranges must be shifted by the length deltas of content ops below them.
+    for anchor, req in style_ops:
+        delta = _shift(anchor)
+        if delta:
+            req = json.loads(json.dumps(req))
+            _offset_indices(req, delta)
+        requests.append(req)
 
     if not requests and not markdown_format_ops:
         print(json.dumps({"error": "No valid operations found"}), file=sys.stderr)
@@ -1261,6 +1372,8 @@ def patch_document(doc_id: str, ops_file: str, project: str = None):
 
         # Pass 1: content modifications + style ops
         if requests:
+            if tab:
+                _inject_tab_id(requests, tab)
             docs_service.documents().batchUpdate(
                 documentId=doc_id,
                 body={"requests": requests},
@@ -1268,17 +1381,20 @@ def patch_document(doc_id: str, ops_file: str, project: str = None):
             total_requests_sent += len(requests)
 
         # Pass 2: markdown formatting (must happen after text is inserted)
-        # Converter requests assume text starts at index 1; offset to actual startIndex.
+        # Converter requests assume text starts at index 1; offset to actual
+        # startIndex, shifted by deltas from content ops at lower indices
+        # (their length changes moved this op's text before pass 2 runs).
         # Also reset inserted range to NORMAL_TEXT first to clear inherited styles.
         if markdown_format_ops:
             format_requests = []
             for start_index, plain_text, batch_reqs in markdown_format_ops:
-                content_end = start_index + len(plain_text)
+                shifted_start = start_index + _shift(start_index)
+                content_end = shifted_start + len(plain_text)
 
                 # Reset to NORMAL_TEXT to clear inherited heading/spacing styles
                 format_requests.append({
                     "updateParagraphStyle": {
-                        "range": {"startIndex": start_index, "endIndex": content_end},
+                        "range": {"startIndex": shifted_start, "endIndex": content_end},
                         "paragraphStyle": {
                             "namedStyleType": "NORMAL_TEXT",
                             "spaceAbove": {"magnitude": 0, "unit": "PT"},
@@ -1288,12 +1404,14 @@ def patch_document(doc_id: str, ops_file: str, project: str = None):
                     }
                 })
 
-                # Offset converter requests: converter assumes index 1, actual is start_index
-                offset = start_index - 1
+                # Offset converter requests: converter assumes index 1, actual is shifted_start
+                offset = shifted_start - 1
                 offset_reqs = json.loads(json.dumps(batch_reqs))  # deep copy
                 _offset_indices(offset_reqs, offset)
                 format_requests.extend(offset_reqs)
 
+            if tab:
+                _inject_tab_id(format_requests, tab)
             docs_service.documents().batchUpdate(
                 documentId=doc_id,
                 body={"requests": format_requests},
@@ -1305,6 +1423,8 @@ def patch_document(doc_id: str, ops_file: str, project: str = None):
             "document_id": doc_id,
             "operations_applied": len(ops),
             "batch_requests_sent": total_requests_sent,
+            "tab": tab,
+            "heading_mapping": "title-promoted" if promote_title else "literal",
             "project": resolved_project,
         }, indent=2))
 
@@ -1643,12 +1763,13 @@ def insert_table(doc_id: str, after_heading: str, table_file: str, heading_text:
         sys.exit(1)
 
 
-def insert_section(doc_id: str, after_heading: str, md_file: str, project: str = None, tab: str = None):
+def insert_section(doc_id: str, after_heading: str, md_file: str, project: str = None, tab: str = None, promote_title: bool = False):
     """Insert formatted markdown content after a heading.
 
     Uses the converter for formatting, which means all spacing and typography
     logic (heading spaceAbove, paragraph spacing, dense section detection, etc.)
-    is automatically applied.
+    is automatically applied. Headings in the fragment map literally
+    (md # -> HEADING_1, ## -> HEADING_2) unless promote_title is set.
 
     When tab is provided, the heading is searched within that tab's body and
     insertion happens at the tab-scoped index with tabId in location/range.
@@ -1676,27 +1797,11 @@ def insert_section(doc_id: str, after_heading: str, md_file: str, project: str =
     conversion = converter.markdown_to_gdocs(markdown_content)
     plain_text = conversion.plain_text
     batch_requests = converter.generate_batch_requests(conversion)
+    if not promote_title:
+        batch_requests = _literalize_heading_styles(batch_requests)
 
     try:
-        # Fetch doc; if tab specified, scope to that tab's body
-        if tab:
-            doc = docs_service.documents().get(
-                documentId=doc_id, includeTabsContent=True
-            ).execute()
-            tab_obj = None
-            for t in doc.get("tabs", []):
-                if t.get("tabProperties", {}).get("tabId") == tab:
-                    tab_obj = t
-                    break
-            if tab_obj is None:
-                print(json.dumps({"error": f"Tab not found: {tab}"}), file=sys.stderr)
-                sys.exit(1)
-            body = tab_obj.get("documentTab", {}).get("body", {}).get("content", [])
-            inline_objects = tab_obj.get("documentTab", {}).get("inlineObjects", {})
-        else:
-            doc = docs_service.documents().get(documentId=doc_id).execute()
-            body = doc.get("body", {}).get("content", [])
-            inline_objects = doc.get("inlineObjects", {})
+        doc, body, inline_objects = _fetch_body(docs_service, doc_id, tab)
 
         heading_map = _build_heading_map(body, inline_objects)
 
@@ -1769,6 +1874,7 @@ def insert_section(doc_id: str, after_heading: str, md_file: str, project: str =
             "document_id": doc_id,
             "section_inserted": True,
             "tab": tab,
+            "heading_mapping": "title-promoted" if promote_title else "literal",
             "url": f"https://docs.google.com/document/d/{doc_id}/edit",
             "project": resolved_project,
         }, indent=2))
@@ -1888,6 +1994,105 @@ def delete_tab(doc_id: str, tab_id: str, project: str = None):
         sys.exit(1)
 
 
+def reorder_tabs(doc_id: str, tab_order: str, project: str = None):
+    """Reorder root-level tabs to the given complete order of tabIds.
+
+    tab_order: comma-separated tabIds covering ALL root-level tabs exactly once
+    (child tabs move with their parents). Requires the full list so the result
+    is deterministic. Applies updateDocumentTabProperties with index 0..n-1
+    left to right, then reads back and reports the resulting order.
+    """
+    resolved_project = _resolve_project(project)
+    docs_service = get_docs_service(project=resolved_project)
+
+    desired = [t.strip() for t in tab_order.split(",") if t.strip()]
+
+    try:
+        doc = docs_service.documents().get(
+            documentId=doc_id, includeTabsContent=True
+        ).execute()
+        root_tabs = doc.get("tabs", [])
+        current = [
+            {
+                "tabId": t.get("tabProperties", {}).get("tabId"),
+                "title": t.get("tabProperties", {}).get("title"),
+                "index": t.get("tabProperties", {}).get("index"),
+            }
+            for t in root_tabs
+        ]
+        current_ids = [t["tabId"] for t in current]
+
+        if sorted(desired) != sorted(current_ids):
+            print(json.dumps({
+                "error": "tab-order must list every root-level tabId exactly once",
+                "given": desired,
+                "current_tabs": current,
+            }, indent=2), file=sys.stderr)
+            sys.exit(1)
+
+        requests = [
+            {
+                "updateDocumentTabProperties": {
+                    "tabProperties": {"tabId": tab_id, "index": i},
+                    "fields": "index",
+                }
+            }
+            for i, tab_id in enumerate(desired)
+        ]
+
+        docs_service.documents().batchUpdate(
+            documentId=doc_id, body={"requests": requests}
+        ).execute()
+
+        # Read back the resulting order so success is verified, not assumed
+        doc = docs_service.documents().get(
+            documentId=doc_id, includeTabsContent=True
+        ).execute()
+        final = [
+            {
+                "tabId": t.get("tabProperties", {}).get("tabId"),
+                "title": t.get("tabProperties", {}).get("title"),
+                "index": t.get("tabProperties", {}).get("index"),
+            }
+            for t in doc.get("tabs", [])
+        ]
+        final_ids = [t["tabId"] for t in sorted(final, key=lambda x: x["index"] or 0)]
+
+        print(json.dumps({
+            "success": final_ids == desired,
+            "document_id": doc_id,
+            "requested_order": desired,
+            "resulting_order": final,
+            "project": resolved_project,
+        }, indent=2))
+        if final_ids != desired:
+            sys.exit(1)
+
+    except Exception as e:
+        print(json.dumps({"error": str(e)}), file=sys.stderr)
+        sys.exit(1)
+
+
+def trash_document(file_id: str, project: str = None):
+    """Move a Google Doc (or any Drive file) to the Drive trash (soft delete)."""
+    resolved_project = _resolve_project(project)
+    drive_service = get_drive_service(project=resolved_project)
+
+    try:
+        meta = drive_service.files().get(fileId=file_id, fields="name").execute()
+        drive_service.files().update(fileId=file_id, body={"trashed": True}).execute()
+        print(json.dumps({
+            "success": True,
+            "file_id": file_id,
+            "title": meta.get("name"),
+            "trashed": True,
+            "project": resolved_project,
+        }, indent=2))
+    except Exception as e:
+        print(json.dumps({"error": str(e), "file_id": file_id}), file=sys.stderr)
+        sys.exit(1)
+
+
 def create_tab_from_markdown(doc_id: str, title: str, markdown_file: str, project: str = None):
     """Create a new tab and populate it with formatted markdown content."""
     # Validate markdown file exists BEFORE creating tab (no orphaned empty tabs)
@@ -1923,21 +2128,25 @@ def create_tab_from_markdown(doc_id: str, title: str, markdown_file: str, projec
             }), file=sys.stderr)
             sys.exit(1)
 
-        # Populate the tab with markdown content using existing update logic
-        update_from_markdown(doc_id, markdown_file, resolved_project, tab_id=new_tab_id)
+        # Populate the tab with markdown content using existing update logic.
+        # force=True: the addDocumentTab call a moment ago bumped the doc's
+        # modifiedTime past the local file's mtime; the brand-new tab is empty,
+        # so the clobber guard has nothing to protect here.
+        update_from_markdown(doc_id, markdown_file, resolved_project, tab_id=new_tab_id, force=True)
 
     except Exception as e:
         print(json.dumps({"error": str(e)}), file=sys.stderr)
         sys.exit(1)
 
 
-def append_markdown_to_tab(doc_id: str, markdown_file: str, project: str = None, tab: str = None):
+def append_markdown_to_tab(doc_id: str, markdown_file: str, project: str = None, tab: str = None, promote_title: bool = False):
     """Append formatted markdown to the end of a document or specific tab.
 
     Preserves all existing content (inline images, headings, paragraphs).
     Use this when the tab already has content you must keep and you want
     formatted output - update-md replaces, insert-section needs a heading
-    anchor, plain --append loses formatting.
+    anchor, plain --append loses formatting. Headings in the appended fragment
+    map literally (md ## -> HEADING_2) unless promote_title is set.
     """
     resolved_project = _resolve_project(project, markdown_file)
     docs_service = get_docs_service(project=resolved_project)
@@ -1961,24 +2170,11 @@ def append_markdown_to_tab(doc_id: str, markdown_file: str, project: str = None,
     conversion = converter.markdown_to_gdocs(markdown_content)
     plain_text = conversion.plain_text
     batch_requests = converter.generate_batch_requests(conversion)
+    if not promote_title:
+        batch_requests = _literalize_heading_styles(batch_requests)
 
     try:
-        if tab:
-            doc = docs_service.documents().get(
-                documentId=doc_id, includeTabsContent=True
-            ).execute()
-            tab_obj = None
-            for t in doc.get("tabs", []):
-                if t.get("tabProperties", {}).get("tabId") == tab:
-                    tab_obj = t
-                    break
-            if tab_obj is None:
-                print(json.dumps({"error": f"Tab not found: {tab}"}), file=sys.stderr)
-                sys.exit(1)
-            body = tab_obj.get("documentTab", {}).get("body", {}).get("content", [])
-        else:
-            doc = docs_service.documents().get(documentId=doc_id).execute()
-            body = doc.get("body", {}).get("content", [])
+        doc, body, _ = _fetch_body(docs_service, doc_id, tab)
 
         end_index = 1
         if body:
@@ -2043,11 +2239,16 @@ def append_markdown_to_tab(doc_id: str, markdown_file: str, project: str = None,
         sys.exit(1)
 
 
-def update_from_markdown(doc_id: str, markdown_file: str, project: str = None, tab_id: str = None, skip_title_sync: bool = False):
+def update_from_markdown(doc_id: str, markdown_file: str, project: str = None, tab_id: str = None, skip_title_sync: bool = False, force: bool = False):
     """
     Update existing document with new markdown content.
     Clears existing content and replaces with formatted markdown.
     Supports targeting a specific tab via tab_id.
+
+    Clobber guard: refuses the overwrite when the doc was modified in Drive
+    more recently than the local markdown file (someone edited the doc after
+    this source was written - a full replace would destroy their edits).
+    Override with force=True after reviewing, or pull the doc first.
     """
     resolved_project = _resolve_project(project, markdown_file)
     docs_service = get_docs_service(project=resolved_project)
@@ -2059,6 +2260,29 @@ def update_from_markdown(doc_id: str, markdown_file: str, project: str = None, t
         sys.exit(1)
 
     markdown_content = md_path.read_text()
+
+    if not force:
+        from datetime import datetime, timezone
+
+        drive_service = get_drive_service(project=resolved_project)
+        meta = drive_service.files().get(
+            fileId=doc_id, fields="modifiedTime,name"
+        ).execute()
+        doc_modified = datetime.fromisoformat(
+            meta["modifiedTime"].replace("Z", "+00:00")
+        )
+        local_modified = datetime.fromtimestamp(md_path.stat().st_mtime, tz=timezone.utc)
+        if doc_modified > local_modified:
+            print(json.dumps({
+                "error": "Clobber guard: doc was modified more recently than the local source",
+                "document_id": doc_id,
+                "document_name": meta.get("name"),
+                "doc_modified": doc_modified.isoformat(),
+                "local_source": str(md_path),
+                "local_modified": local_modified.isoformat(),
+                "hint": "The doc has edits newer than this markdown file; a full replace would destroy them. Pull with --read and merge, or re-run with --force to overwrite anyway.",
+            }, indent=2), file=sys.stderr)
+            sys.exit(1)
 
     # Helper to build location dict with optional tabId
     def _loc(index):
@@ -2357,6 +2581,8 @@ def main():
     group.add_argument("--create-tab", metavar="DOC_ID", help="Create a new tab (requires --title)")
     group.add_argument("--create-tab-md", metavar="DOC_ID", help="Create tab with markdown content (requires --title and --file)")
     group.add_argument("--delete-tab", metavar="DOC_ID", help="Delete a tab (requires --tab)")
+    group.add_argument("--reorder-tabs", metavar="DOC_ID", help="Reorder root-level tabs (requires --tab-order with ALL root tabIds)")
+    group.add_argument("--trash", metavar="FILE_ID", help="Move a doc/file to the Drive trash (soft delete)")
     group.add_argument("--inspect", metavar="DOC_ID", help="Inspect document structure with indices and heading map")
     group.add_argument("--patch", metavar="DOC_ID", help="Apply targeted edits from operations file (requires --ops)")
     group.add_argument("--insert-table", metavar="DOC_ID", help="Insert formatted table after a heading")
@@ -2380,8 +2606,11 @@ def main():
     parser.add_argument("--text", help="Text to append")
     parser.add_argument("--requests", help="JSON batch update requests")
     parser.add_argument("--project", "-p", help="Project (anaro-labs, estate-mate). Auto-detected from --file path if not specified.")
-    parser.add_argument("--tab", help="Target a specific tab by tabId (for --update-md, --append, --read)")
+    parser.add_argument("--tab", help="Target a specific tab by tabId (for --update-md, --append, --append-md, --read, --inspect, --find-text, --find-heading, --patch, --insert-section, --delete-tab)")
+    parser.add_argument("--tab-order", help="Comma-separated tabIds in the desired order (for --reorder-tabs; must cover all root-level tabs)")
     parser.add_argument("--skip-title-sync", action="store_true", help="Don't sync Drive filename from h1")
+    parser.add_argument("--force", action="store_true", help="Override the clobber guard on --update-md (doc modified more recently than local source)")
+    parser.add_argument("--promote-title", action="store_true", help="In fragments (--insert-section, --append-md, --patch replaceMarkdown): keep the full-document heading promotion (md # -> TITLE) instead of literal levels")
     parser.add_argument("--ops", help="Operations JSON file for --patch")
     parser.add_argument("--after-heading", help="Target heading for --insert-table and --insert-section")
     parser.add_argument("--heading", help="Optional heading text to insert before table")
@@ -2425,12 +2654,12 @@ def main():
     elif args.update_md:
         if not args.file:
             parser.error("--update-md requires --file")
-        update_from_markdown(args.update_md, args.file, args.project, args.tab, args.skip_title_sync)
+        update_from_markdown(args.update_md, args.file, args.project, args.tab, args.skip_title_sync, force=args.force)
 
     elif args.append_md:
         if not args.file:
             parser.error("--append-md requires --file")
-        append_markdown_to_tab(args.append_md, args.file, args.project, args.tab)
+        append_markdown_to_tab(args.append_md, args.file, args.project, args.tab, promote_title=args.promote_title)
 
     elif args.list_tabs:
         list_tabs(args.list_tabs, args.project)
@@ -2450,13 +2679,21 @@ def main():
             parser.error("--delete-tab requires --tab")
         delete_tab(args.delete_tab, args.tab, args.project)
 
+    elif args.reorder_tabs:
+        if not args.tab_order:
+            parser.error("--reorder-tabs requires --tab-order")
+        reorder_tabs(args.reorder_tabs, args.tab_order, args.project)
+
+    elif args.trash:
+        trash_document(args.trash, args.project)
+
     elif args.inspect:
-        inspect_document(args.inspect, args.project)
+        inspect_document(args.inspect, args.project, args.tab)
 
     elif args.patch:
         if not args.ops:
             parser.error("--patch requires --ops")
-        patch_document(args.patch, args.ops, args.project)
+        patch_document(args.patch, args.ops, args.project, tab=args.tab, promote_title=args.promote_title)
 
     elif args.insert_table:
         if not args.after_heading or not args.file:
@@ -2466,7 +2703,7 @@ def main():
     elif args.insert_section:
         if not args.after_heading or not args.file:
             parser.error("--insert-section requires --after-heading and --file")
-        insert_section(args.insert_section, args.after_heading, args.file, args.project, args.tab)
+        insert_section(args.insert_section, args.after_heading, args.file, args.project, args.tab, promote_title=args.promote_title)
 
     elif args.export_pdf:
         export_pdf_doc(args.export_pdf, output_path=args.output, project=args.project)
@@ -2474,12 +2711,12 @@ def main():
     elif args.find_text:
         if not args.text:
             parser.error("--find-text requires --text")
-        find_text(args.find_text, args.text, args.project)
+        find_text(args.find_text, args.text, args.project, args.tab)
 
     elif args.find_heading:
         if not args.text:
             parser.error("--find-heading requires --text")
-        find_heading(args.find_heading, args.text, args.project)
+        find_heading(args.find_heading, args.text, args.project, args.tab)
 
     elif args.check_comments:
         check_comments(args.check_comments, args.project, active_only=args.active_only)
