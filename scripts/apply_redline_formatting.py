@@ -20,30 +20,15 @@ import re
 import sys
 from pathlib import Path
 
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-
-SERVICE_ACCOUNTS = {
-    "anaro-labs": str(Path.home() / ".google_workspace_mcp/claude-code-api-482615-91dc5f2fd86b.json"),
-    "estate-mate": str(Path.home() / ".google_workspace_estatemate/service-account.json"),
-}
-
-SCOPES = ["https://www.googleapis.com/auth/documents"]
+# Credential routing is single-sourced in google_client.py (same directory);
+# this script carries no key paths or identities of its own.
+sys.path.insert(0, str(Path(__file__).parent))
+from google_client import get_docs_service
 
 # Marker lengths in characters
 OPEN_TAG_LEN = 5   # «DEL» or «ADD»
 CLOSE_DEL_LEN = 6  # «/DEL»
 CLOSE_ADD_LEN = 6  # «/ADD»
-
-
-def get_docs_service(project: str):
-    cred_path = SERVICE_ACCOUNTS[project]
-    creds = service_account.Credentials.from_service_account_file(cred_path, scopes=SCOPES)
-    if project == "anaro-labs":
-        creds = creds.with_subject("roman@anarolabs.com")
-    elif project == "estate-mate":
-        creds = creds.with_subject("roman@estatemate.io")
-    return build("docs", "v1", credentials=creds)
 
 
 def extract_full_text(doc):
