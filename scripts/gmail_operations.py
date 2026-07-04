@@ -46,6 +46,18 @@ Usage:
     # Add to thread without reply headers
     python3 gmail_operations.py --draft --thread-id THREAD_ID --to "..." --subject "..." --body "..."
 
+    # List drafts (returns the draft IDs that update/delete need)
+    python3 gmail_operations.py --list-drafts [--max 20] [--project estate-mate]
+
+    # Update an existing draft in place (unspecified fields carry over,
+    # attachments are preserved unless --attach replaces them)
+    python3 gmail_operations.py --draft-update DRAFT_ID --body "Revised text"
+    python3 gmail_operations.py --draft-update DRAFT_ID --subject "New subject" --to "other@email.com"
+
+    # Delete draft(s)
+    python3 gmail_operations.py --draft-delete DRAFT_ID
+    python3 gmail_operations.py --draft-delete ID1,ID2,ID3
+
     # Send email
     python3 gmail_operations.py --send --to "recipient@email.com" --subject "Subject" --body "Body text"
 
@@ -573,6 +585,199 @@ def create_draft(to: str, subject: str, body: str, cc: str = None,
         sys.exit(1)
 
 
+def list_drafts(max_results: int = 10, project: str = None):
+    """List drafts with their draft IDs (the handle --draft-update/--draft-delete need)."""
+    service = get_gmail_service(project=project)
+
+    try:
+        resp = service.users().drafts().list(
+            userId="me", maxResults=max_results
+        ).execute()
+        drafts = resp.get("drafts", [])
+
+        output = []
+        for d in drafts:
+            detail = service.users().drafts().get(
+                userId="me", id=d["id"], format="metadata"
+            ).execute()
+            msg = detail.get("message", {})
+            headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
+            output.append({
+                "draft_id": d["id"],
+                "message_id": msg.get("id"),
+                "thread_id": msg.get("threadId"),
+                "to": headers.get("To", ""),
+                "subject": headers.get("Subject", ""),
+                "date": headers.get("Date", ""),
+                "snippet": msg.get("snippet", ""),
+            })
+
+        print(json.dumps({
+            "drafts": output,
+            "count": len(output),
+            "inbox": get_impersonate_user(project=project),
+        }, indent=2))
+
+    except Exception as e:
+        print(json.dumps({"error": str(e)}), file=sys.stderr)
+        sys.exit(1)
+
+
+def _reattach_bytes(message: MIMEMultipart, filename: str, data: bytes):
+    """Attach raw bytes to a MIMEMultipart message under the original filename."""
+    content_type, _ = mimetypes.guess_type(filename)
+    if content_type is None:
+        content_type = "application/octet-stream"
+    main_type, sub_type = content_type.split("/", 1)
+
+    attachment = MIMEBase(main_type, sub_type)
+    attachment.set_payload(data)
+    encoders.encode_base64(attachment)
+    attachment.add_header("Content-Disposition", "attachment", filename=filename)
+    message.attach(attachment)
+
+
+def update_draft(draft_id: str, to: str = None, cc: str = None, subject: str = None,
+                 body: str = None, attach: list = None, project: str = None):
+    """Update an existing draft in place (same draft ID, drafts only - never sends).
+
+    Fields not passed carry over from the current draft: recipients, subject,
+    body, threading headers (In-Reply-To/References/threadId), and attachments.
+    Passing --attach replaces the attachment set; otherwise existing attachments
+    are re-fetched and preserved. A passed --body goes through the same HTML
+    formatting rules as --draft; a carried-over body is reused verbatim.
+    """
+    service = get_gmail_service(project=project)
+
+    if not any([to, cc, subject, body, attach]):
+        print(json.dumps({"error": "Nothing to update: pass at least one of --to, --cc, --subject, --body, --attach"}), file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        existing = service.users().drafts().get(
+            userId="me", id=draft_id, format="full"
+        ).execute()
+    except Exception as e:
+        print(json.dumps({"error": f"Draft not found: {e}", "draft_id": draft_id}), file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        msg = existing.get("message", {})
+        payload = msg.get("payload", {})
+        headers = {h["name"]: h["value"] for h in payload.get("headers", [])}
+        existing_body, existing_atts, _ = _extract_body_and_attachments(payload)
+
+        final_to = to or headers.get("To", "")
+        final_cc = cc or headers.get("Cc")
+        final_subject = subject or headers.get("Subject", "")
+        thread_id = msg.get("threadId")
+        in_reply_to = headers.get("In-Reply-To")
+        references = headers.get("References")
+
+        if not final_to or not final_subject:
+            print(json.dumps({"error": "Draft is missing To/Subject and none passed; provide --to/--subject"}), file=sys.stderr)
+            sys.exit(1)
+
+        # New body goes through formatting rules; carried-over body is reused raw
+        # (it is already the HTML we generated at create time - re-formatting
+        # would double-convert it).
+        html_body = format_body_html(body) if body else existing_body
+
+        # Attachment plan: --attach replaces; otherwise carry originals over
+        carried_attachments = []
+        message = None
+        if attach:
+            message = MIMEMultipart("mixed")
+            alt_part = MIMEMultipart("alternative")
+            alt_part.attach(MIMEText(html_body, "html"))
+            message.attach(alt_part)
+            for file_path in attach:
+                _attach_file(message, file_path)
+        elif existing_atts:
+            message = MIMEMultipart("mixed")
+            alt_part = MIMEMultipart("alternative")
+            alt_part.attach(MIMEText(html_body, "html"))
+            message.attach(alt_part)
+            for att in existing_atts:
+                att_data = service.users().messages().attachments().get(
+                    userId="me", messageId=msg["id"], id=att["attachment_id"]
+                ).execute()
+                data = base64.urlsafe_b64decode(att_data["data"])
+                _reattach_bytes(message, att["filename"], data)
+                carried_attachments.append(att["filename"])
+        else:
+            message = MIMEMultipart("alternative")
+            message.attach(MIMEText(html_body, "html"))
+
+        message["To"] = final_to
+        message["Subject"] = final_subject
+        if final_cc:
+            message["Cc"] = final_cc
+        if in_reply_to:
+            message["In-Reply-To"] = in_reply_to
+        if references:
+            message["References"] = references
+
+        raw = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
+
+        api_body = {"message": {"raw": raw}}
+        if thread_id:
+            api_body["message"]["threadId"] = thread_id
+
+        updated = service.users().drafts().update(
+            userId="me", id=draft_id, body=api_body
+        ).execute()
+
+        result = {
+            "success": True,
+            "draft_id": updated.get("id"),
+            "message_id": updated.get("message", {}).get("id"),
+            "to": final_to,
+            "subject": final_subject,
+            "updated_fields": [f for f, v in [("to", to), ("cc", cc), ("subject", subject), ("body", body), ("attachments", attach)] if v],
+            "inbox": get_impersonate_user(project=project),
+        }
+        if thread_id:
+            result["thread_id"] = thread_id
+        if attach:
+            result["attachments"] = [Path(p).name for p in attach]
+            if existing_atts:
+                result["replaced_attachments"] = [a["filename"] for a in existing_atts]
+        elif carried_attachments:
+            result["attachments_carried_over"] = carried_attachments
+
+        print(json.dumps(result, indent=2))
+
+    except Exception as e:
+        print(json.dumps({"error": str(e), "draft_id": draft_id}), file=sys.stderr)
+        sys.exit(1)
+
+
+def delete_draft(draft_ids: list, project: str = None):
+    """Delete one or more drafts by draft ID (drafts only - sent mail untouched)."""
+    service = get_gmail_service(project=project)
+
+    successes = []
+    errors = []
+    for did in draft_ids:
+        try:
+            service.users().drafts().delete(userId="me", id=did).execute()
+            successes.append(did)
+        except Exception as e:
+            errors.append({"draft_id": did, "error": str(e)})
+
+    print(json.dumps({
+        "success": not errors,
+        "deleted": successes,
+        "deleted_count": len(successes),
+        "errors": errors,
+        "inbox": get_impersonate_user(project=project),
+    }, indent=2))
+
+    if errors:
+        sys.exit(1)
+
+
 def send_email(to: str, subject: str, body: str, cc: str = None,
                thread_id: str = None, in_reply_to: str = None,
                references: str = None, project: str = None,
@@ -735,6 +940,9 @@ def main():
     group.add_argument("--download-attachment", metavar="MESSAGE_ID", help="Download attachment from a message")
     group.add_argument("--deep-read", metavar="MESSAGE_ID", help="Deep read: body + attachments + Drive link metadata")
     group.add_argument("--draft", action="store_true", help="Create draft")
+    group.add_argument("--list-drafts", action="store_true", help="List drafts with their draft IDs")
+    group.add_argument("--draft-update", metavar="DRAFT_ID", help="Update an existing draft in place (fields not passed carry over)")
+    group.add_argument("--draft-delete", metavar="DRAFT_ID", help="Delete draft(s) by ID (comma-separated for batch)")
     group.add_argument("--send", action="store_true", help="Send email")
     group.add_argument("--labels", action="store_true", help="List labels")
     group.add_argument("--modify-labels", metavar="MESSAGE_ID", help="Add/remove labels on a message")
@@ -782,6 +990,17 @@ def main():
 
     elif args.deep_read:
         deep_read_email(args.deep_read, project=args.project)
+
+    elif args.list_drafts:
+        list_drafts(args.max, project=args.project)
+
+    elif args.draft_update:
+        update_draft(args.draft_update, to=args.to, cc=args.cc, subject=args.subject,
+                     body=args.body, attach=args.attach, project=args.project)
+
+    elif args.draft_delete:
+        ids = [d.strip() for d in args.draft_delete.split(",") if d.strip()]
+        delete_draft(ids, project=args.project)
 
     elif args.draft or args.send:
         # Resolve reply context if --reply-to provided
