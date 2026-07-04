@@ -87,8 +87,16 @@ if [ "$ACTIVE_COUNT" -gt 0 ]; then
 fi
 
 # Step 3: Push (tab-scoped if GDOC_TAB set)
+# docs_operations.py has its own clobber guard (refuses when the doc's Drive
+# modifiedTime is newer than the local file's mtime). A reviewed --force here
+# is forwarded so it overrides that guard too; without --force the guard is a
+# second, independent stop even when this script's diff cache is empty.
+FORCE_ARGS=()
+if [[ "$FORCE" == "--force" ]]; then
+  FORCE_ARGS=(--force)
+fi
 echo "Pushing to Google Doc${GDOC_TAB:+ (tab $GDOC_TAB)}..."
-bash "$PORTALS" scripts/docs_operations.py --update-md "$DOC_ID" "${TAB_ARGS[@]}" --file "$FILE" --project "$PROJECT"
+bash "$PORTALS" scripts/docs_operations.py --update-md "$DOC_ID" "${TAB_ARGS[@]}" --file "$FILE" --project "$PROJECT" "${FORCE_ARGS[@]}"
 
 # Step 4: Cache the new state for future diffs
 bash "$PORTALS" scripts/docs_operations.py --read "$DOC_ID" "${TAB_ARGS[@]}" --project "$PROJECT" 2>/dev/null \
