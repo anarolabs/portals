@@ -37,6 +37,16 @@ Usage:
     # Create draft
     python3 gmail_operations.py --draft --to "recipient@email.com" --subject "Subject" --body "Body text"
 
+    # Draft with inline images embedded in the body (walkthrough / screenshots).
+    # Reference each image in the body with a {{inline:N}} token (1-based, in --inline order);
+    # any image without a token is appended in order at the end.
+    python3 gmail_operations.py --draft --to "x@y.com" --subject "So geht's" \
+        --body "Schritt 1:\n{{inline:1}}\nSchritt 2:\n{{inline:2}}" \
+        --inline /path/step1.png --inline /path/step2.png
+
+    # Attach a file as a download (not inline)
+    python3 gmail_operations.py --draft --to "x@y.com" --subject "S" --body "..." --attach /path/report.pdf
+
     # Reply to a message (auto-resolves thread, to, subject)
     python3 gmail_operations.py --draft --reply-to MESSAGE_ID --body "Thanks, sounds good!"
 
@@ -80,6 +90,7 @@ import re
 import sys
 from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
+from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email import encoders
 from pathlib import Path
@@ -525,27 +536,124 @@ def _attach_file(message: MIMEMultipart, file_path: str):
     message.attach(attachment)
 
 
+def _make_inline_image(file_path: str, cid: str):
+    """Build a MIME part for an image referenced inline in the HTML body via cid.
+
+    Marked `Content-Disposition: inline` with a `Content-ID`, so `<img src="cid:...">`
+    renders in-body rather than as a download.
+    """
+    path = Path(file_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Inline image not found: {file_path}")
+
+    content_type, _ = mimetypes.guess_type(str(path))
+    if content_type is None:
+        content_type = "application/octet-stream"
+    main_type, sub_type = content_type.split("/", 1)
+
+    data = path.read_bytes()
+    if main_type == "image":
+        part = MIMEImage(data, _subtype=sub_type)
+    else:
+        # Non-image inline is unusual but supported (e.g. inline SVG served as text).
+        part = MIMEBase(main_type, sub_type)
+        part.set_payload(data)
+        encoders.encode_base64(part)
+    part.add_header("Content-ID", f"<{cid}>")
+    part.add_header("Content-Disposition", "inline", filename=path.name)
+    return part
+
+
+def _inline_img_tag(cid: str) -> str:
+    """Neutral, mobile-safe <img> tag for an inline image. Scales to container width."""
+    return (f'<img src="cid:{cid}" '
+            f'style="display:block;max-width:100%;height:auto;margin:12px 0;" alt="">')
+
+
+def _embed_inline_images(html_body: str, inline_files: list):
+    """Wire inline image files into the HTML body.
+
+    Each file gets a stable cid (`inline1`, `inline2`, ...). Anywhere the body
+    contains a token `{{inline:REF}}` - where REF is the 1-based index, the file
+    basename, or the basename without extension - the token is replaced with an
+    <img> tag. Any provided image not referenced by a token is appended, in order,
+    after the body. Returns (updated_html, [(cid, file_path), ...]) where the list
+    carries every provided image so the caller attaches them all.
+    """
+    parts = []           # (cid, file_path) for every provided image, in order
+    by_index = {}
+    by_name = {}
+    for i, fp in enumerate(inline_files, start=1):
+        cid = f"inline{i}"
+        parts.append((cid, fp))
+        by_index[str(i)] = cid
+        by_name[Path(fp).name] = cid
+        by_name[Path(fp).stem] = cid
+
+    used = set()
+
+    def _repl(m):
+        ref = m.group(1).strip()
+        cid = by_index.get(ref) or by_name.get(ref)
+        if not cid:
+            return m.group(0)  # leave unknown tokens untouched
+        used.add(cid)
+        return _inline_img_tag(cid)
+
+    html_body = re.sub(r"\{\{\s*inline:\s*([^}]+?)\s*\}\}", _repl, html_body)
+
+    leftovers = [(cid, fp) for cid, fp in parts if cid not in used]
+    if leftovers:
+        html_body += "".join(_inline_img_tag(cid) for cid, _ in leftovers)
+
+    return html_body, parts
+
+
+def _compose_message(html_body: str, attach: list = None, inline: list = None):
+    """Assemble the MIME tree for a message body plus optional inline images and
+    file attachments. Nesting: mixed( related( alternative(html), inline-imgs ), files ).
+    Any level with nothing to add collapses away, preserving prior behaviour when
+    neither inline nor attach is passed (a bare multipart/alternative)."""
+    attach = attach or []
+    inline = inline or []  # list of (cid, file_path)
+
+    alt = MIMEMultipart("alternative")
+    alt.attach(MIMEText(html_body, "html"))
+
+    if inline:
+        related = MIMEMultipart("related")
+        related.attach(alt)
+        for cid, fp in inline:
+            related.attach(_make_inline_image(fp, cid))
+        content = related
+    else:
+        content = alt
+
+    if attach:
+        mixed = MIMEMultipart("mixed")
+        mixed.attach(content)
+        for file_path in attach:
+            _attach_file(mixed, file_path)
+        return mixed
+
+    return content
+
+
 def create_draft(to: str, subject: str, body: str, cc: str = None,
                   thread_id: str = None, in_reply_to: str = None,
                   references: str = None, project: str = None,
-                  attach: list = None):
+                  attach: list = None, inline: list = None):
     """Create email draft with YOUR formatting rules."""
     service = get_gmail_service(project=project)
 
     # Apply formatting rules
     html_body = format_body_html(body)
 
-    # Use mixed multipart when attaching files, alternative otherwise
-    if attach:
-        message = MIMEMultipart("mixed")
-        alt_part = MIMEMultipart("alternative")
-        alt_part.attach(MIMEText(html_body, "html"))
-        message.attach(alt_part)
-        for file_path in attach:
-            _attach_file(message, file_path)
-    else:
-        message = MIMEMultipart("alternative")
-        message.attach(MIMEText(html_body, "html"))
+    # Wire inline images (cid) into the body, then build the MIME tree.
+    inline_parts = []
+    if inline:
+        html_body, inline_parts = _embed_inline_images(html_body, inline)
+    message = _compose_message(html_body, attach=attach, inline=inline_parts)
 
     message["To"] = to
     message["Subject"] = subject
@@ -781,24 +889,18 @@ def delete_draft(draft_ids: list, project: str = None):
 def send_email(to: str, subject: str, body: str, cc: str = None,
                thread_id: str = None, in_reply_to: str = None,
                references: str = None, project: str = None,
-               attach: list = None):
+               attach: list = None, inline: list = None):
     """Send email with YOUR formatting rules."""
     service = get_gmail_service(project=project)
 
     # Apply formatting rules
     html_body = format_body_html(body)
 
-    # Use mixed multipart when attaching files, alternative otherwise
-    if attach:
-        message = MIMEMultipart("mixed")
-        alt_part = MIMEMultipart("alternative")
-        alt_part.attach(MIMEText(html_body, "html"))
-        message.attach(alt_part)
-        for file_path in attach:
-            _attach_file(message, file_path)
-    else:
-        message = MIMEMultipart("alternative")
-        message.attach(MIMEText(html_body, "html"))
+    # Wire inline images (cid) into the body, then build the MIME tree.
+    inline_parts = []
+    if inline:
+        html_body, inline_parts = _embed_inline_images(html_body, inline)
+    message = _compose_message(html_body, attach=attach, inline=inline_parts)
 
     message["To"] = to
     message["Subject"] = subject
@@ -966,6 +1068,13 @@ def main():
     parser.add_argument("--attach", metavar="FILE_PATH", action="append",
                         help="Attach file(s) to draft or sent email (repeatable)")
 
+    # Inline images (embedded in the body via cid, not as downloads)
+    parser.add_argument("--inline", metavar="FILE_PATH", action="append",
+                        help="Embed image(s) inline in the body (repeatable, order = index). "
+                             "Reference in --body with {{inline:N}}, {{inline:filename.png}}, or "
+                             "{{inline:filename}}; unreferenced images are appended in order. "
+                             "For --draft and --send only.")
+
     # Thread/reply arguments
     parser.add_argument("--reply-to", metavar="MESSAGE_ID",
                         help="Reply to this message (auto-resolves thread, to, subject)")
@@ -1046,12 +1155,12 @@ def main():
             create_draft(to, subject, args.body, args.cc,
                          thread_id=thread_id, in_reply_to=in_reply_to,
                          references=references, project=args.project,
-                         attach=args.attach)
+                         attach=args.attach, inline=args.inline)
         else:
             send_email(to, subject, args.body, args.cc,
                        thread_id=thread_id, in_reply_to=in_reply_to,
                        references=references, project=args.project,
-                       attach=args.attach)
+                       attach=args.attach, inline=args.inline)
 
     elif args.labels:
         list_labels(project=args.project)
