@@ -151,6 +151,42 @@ def get_signature(project: str = None) -> str:
     return signature
 
 
+def _signature_name(signature_html: str) -> str:
+    """First line of text in the signature block - the sender's name."""
+    text = re.sub(r"<[^>]+>", "\n", signature_html)
+    for line in text.split("\n"):
+        line = line.replace("&nbsp;", " ").strip()
+        if line:
+            return line
+    return ""
+
+
+def _strip_duplicate_signoff_name(html_body: str, signature_html: str) -> str:
+    """Drop a trailing bare-name line that the signature is about to repeat.
+
+    A body ending "Viele Grüße<br>Roman" plus a signature headed "Roman
+    Siepelmeyer" reads as the name twice. Gmail's own behaviour is that the
+    typed sign-off stops at the greeting and the signature supplies the name,
+    so the greeting line stays and the name line goes.
+    """
+    name = _signature_name(signature_html)
+    if not name:
+        return html_body
+
+    candidates = {name.casefold(), name.split()[0].casefold()}
+
+    # Split on the trailing <br> run only; anything else is real content.
+    match = re.search(r"(?:<br\s*/?>\s*)+([^<>]*)$", html_body, flags=re.IGNORECASE)
+    if not match:
+        return html_body
+
+    tail = match.group(1).replace("&nbsp;", " ").strip()
+    if tail.casefold().rstrip(",") in candidates:
+        return html_body[: match.start()]
+
+    return html_body
+
+
 def append_signature(html_body: str, project: str = None) -> str:
     """Append the sending identity's signature to an already-formatted HTML body.
 
@@ -163,6 +199,8 @@ def append_signature(html_body: str, project: str = None) -> str:
     signature = get_signature(project=project)
     if not signature:
         return html_body
+
+    html_body = _strip_duplicate_signoff_name(html_body, signature)
 
     return f'{html_body}<br><br><div {SIGNATURE_MARKER} data-smartmail="gmail_signature">{signature}</div>'
 
