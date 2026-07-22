@@ -56,6 +56,10 @@ Usage:
     # Add to thread without reply headers
     python3 gmail_operations.py --draft --thread-id THREAD_ID --to "..." --subject "..." --body "..."
 
+    # Signature: the sending identity's Gmail signature is appended by default.
+    # Opt out with --no-signature.
+    python3 gmail_operations.py --draft --to "x@y.com" --subject "S" --body "..." --no-signature
+
     # List drafts (returns the draft IDs that update/delete need)
     python3 gmail_operations.py --list-drafts [--max 20] [--project estate-mate]
 
@@ -97,6 +101,70 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from google_client import get_gmail_service, get_drive_service, get_impersonate_user
+
+
+# Local fallback: {"roman@estatemate.io": "<div>...</div>", ...}
+SIGNATURE_FALLBACK_FILE = Path(__file__).parent.parent / "config" / "signatures.json"
+
+# Marker Gmail itself uses; keeps the block collapsible in the client and lets us
+# detect a body that already carries a signature.
+SIGNATURE_MARKER = 'class="gmail_signature"'
+
+_SIGNATURE_CACHE = {}
+
+
+def get_signature(project: str = None) -> str:
+    """Return the sendAs signature HTML for the project's sending identity.
+
+    Reads the live Gmail setting (the same block a hand-written message gets),
+    which the existing gmail.readonly scope already covers - no settings scope
+    needed. Falls back to config/signatures.json keyed by the identity address
+    if the API call fails, and to "" if there is nothing to append.
+    """
+    identity = get_impersonate_user(project=project)
+    if identity in _SIGNATURE_CACHE:
+        return _SIGNATURE_CACHE[identity]
+
+    signature = ""
+    try:
+        service = get_gmail_service(project=project)
+        entries = service.users().settings().sendAs().list(
+            userId="me"
+        ).execute().get("sendAs", [])
+        match = next(
+            (e for e in entries if e.get("sendAsEmail", "").lower() == identity.lower()),
+            None,
+        ) or next((e for e in entries if e.get("isDefault")), None)
+        if match:
+            signature = (match.get("signature") or "").strip()
+    except Exception:
+        signature = ""
+
+    if not signature and SIGNATURE_FALLBACK_FILE.exists():
+        try:
+            stored = json.loads(SIGNATURE_FALLBACK_FILE.read_text(encoding="utf-8"))
+            signature = (stored.get(identity) or "").strip()
+        except Exception:
+            signature = ""
+
+    _SIGNATURE_CACHE[identity] = signature
+    return signature
+
+
+def append_signature(html_body: str, project: str = None) -> str:
+    """Append the sending identity's signature to an already-formatted HTML body.
+
+    No-op when the body already carries a signature block, so re-running
+    --draft-update on a draft we created does not stack copies.
+    """
+    if SIGNATURE_MARKER in html_body:
+        return html_body
+
+    signature = get_signature(project=project)
+    if not signature:
+        return html_body
+
+    return f'{html_body}<br><br><div {SIGNATURE_MARKER} data-smartmail="gmail_signature">{signature}</div>'
 
 
 def format_body_html(text: str) -> str:
@@ -642,12 +710,15 @@ def _compose_message(html_body: str, attach: list = None, inline: list = None):
 def create_draft(to: str, subject: str, body: str, cc: str = None,
                   thread_id: str = None, in_reply_to: str = None,
                   references: str = None, project: str = None,
-                  attach: list = None, inline: list = None):
+                  attach: list = None, inline: list = None,
+                  signature: bool = True):
     """Create email draft with YOUR formatting rules."""
     service = get_gmail_service(project=project)
 
     # Apply formatting rules
     html_body = format_body_html(body)
+    if signature:
+        html_body = append_signature(html_body, project=project)
 
     # Wire inline images (cid) into the body, then build the MIME tree.
     inline_parts = []
@@ -746,7 +817,8 @@ def _reattach_bytes(message: MIMEMultipart, filename: str, data: bytes):
 
 
 def update_draft(draft_id: str, to: str = None, cc: str = None, subject: str = None,
-                 body: str = None, attach: list = None, project: str = None):
+                 body: str = None, attach: list = None, project: str = None,
+                 signature: bool = True):
     """Update an existing draft in place (same draft ID, drafts only - never sends).
 
     Fields not passed carry over from the current draft: recipients, subject,
@@ -790,6 +862,8 @@ def update_draft(draft_id: str, to: str = None, cc: str = None, subject: str = N
         # (it is already the HTML we generated at create time - re-formatting
         # would double-convert it).
         html_body = format_body_html(body) if body else existing_body
+        if body and signature:
+            html_body = append_signature(html_body, project=project)
 
         # Attachment plan: --attach replaces; otherwise carry originals over
         carried_attachments = []
@@ -889,12 +963,15 @@ def delete_draft(draft_ids: list, project: str = None):
 def send_email(to: str, subject: str, body: str, cc: str = None,
                thread_id: str = None, in_reply_to: str = None,
                references: str = None, project: str = None,
-               attach: list = None, inline: list = None):
+               attach: list = None, inline: list = None,
+               signature: bool = True):
     """Send email with YOUR formatting rules."""
     service = get_gmail_service(project=project)
 
     # Apply formatting rules
     html_body = format_body_html(body)
+    if signature:
+        html_body = append_signature(html_body, project=project)
 
     # Wire inline images (cid) into the body, then build the MIME tree.
     inline_parts = []
@@ -1075,6 +1152,12 @@ def main():
                              "{{inline:filename}}; unreferenced images are appended in order. "
                              "For --draft and --send only.")
 
+    # Signature (on by default: drafts land send-ready)
+    parser.add_argument("--no-signature", action="store_true",
+                        help="Do not append the sending identity's Gmail signature "
+                             "(appended by default on --draft, --draft-update with a "
+                             "new --body, and --send)")
+
     # Thread/reply arguments
     parser.add_argument("--reply-to", metavar="MESSAGE_ID",
                         help="Reply to this message (auto-resolves thread, to, subject)")
@@ -1105,7 +1188,8 @@ def main():
 
     elif args.draft_update:
         update_draft(args.draft_update, to=args.to, cc=args.cc, subject=args.subject,
-                     body=args.body, attach=args.attach, project=args.project)
+                     body=args.body, attach=args.attach, project=args.project,
+                     signature=not args.no_signature)
 
     elif args.draft_delete:
         ids = [d.strip() for d in args.draft_delete.split(",") if d.strip()]
@@ -1155,12 +1239,14 @@ def main():
             create_draft(to, subject, args.body, args.cc,
                          thread_id=thread_id, in_reply_to=in_reply_to,
                          references=references, project=args.project,
-                         attach=args.attach, inline=args.inline)
+                         attach=args.attach, inline=args.inline,
+                         signature=not args.no_signature)
         else:
             send_email(to, subject, args.body, args.cc,
                        thread_id=thread_id, in_reply_to=in_reply_to,
                        references=references, project=args.project,
-                       attach=args.attach, inline=args.inline)
+                       attach=args.attach, inline=args.inline,
+                       signature=not args.no_signature)
 
     elif args.labels:
         list_labels(project=args.project)
